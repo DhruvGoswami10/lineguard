@@ -1,0 +1,28 @@
+Dataset: data\mvtec\bottle
+  train/good            209 images
+  test/good              20 images
+  test/broken_large      20 images
+  test/broken_small      22 images
+  test/contamination     21 images
+Training ResNet-18 on 229 images (198 good, 31 defect) on cuda. Class weights good/defect: 0.578/3.694
+epoch  1  train loss 0.3837 acc 0.747  val loss 0.0187  val good bottles passed 1.000
+epoch  2  train loss 0.1203 acc 0.969  val loss 0.0169  val good bottles passed 1.000
+epoch  3  train loss 0.1338 acc 0.948  val loss 0.0311  val good bottles passed 1.000
+epoch  4  train loss 0.1223 acc 0.969  val loss 0.0236  val good bottles passed 1.000
+epoch  5  train loss 0.1591 acc 0.961  val loss 0.0157  val good bottles passed 1.000
+epoch  6  train loss 0.0278 acc 0.996  val loss 0.0024  val good bottles passed 1.000
+epoch  7  train loss 0.0249 acc 0.996  val loss 0.0034  val good bottles passed 1.000
+epoch  8  train loss 0.0328 acc 0.987  val loss 0.0106  val good bottles passed 1.000
+epoch  9  train loss 0.0252 acc 0.996  val loss 0.0045  val good bottles passed 1.000
+epoch 10  train loss 0.0090 acc 1.000  val loss 0.0032  val good bottles passed 1.000
+epoch 11  train loss 0.0281 acc 0.996  val loss 0.0017  val good bottles passed 1.000
+epoch 12  train loss 0.0075 acc 1.000  val loss 0.0023  val good bottles passed 1.000
+epoch 13  train loss 0.0042 acc 1.000  val loss 0.0039  val good bottles passed 1.000
+epoch 14  train loss 0.0042 acc 1.000  val loss 0.0020  val good bottles passed 1.000
+epoch 15  train loss 0.0692 acc 0.983  val loss 0.0008  val good bottles passed 1.000
+epoch 16  train loss 0.0931 acc 0.983  val loss 0.0954  val good bottles passed 1.000
+epoch 17  train loss 0.0437 acc 0.974  val loss 0.1015  val good bottles passed 1.000
+epoch 18  train loss 0.0202 acc 0.996  val loss 0.0566  val good bottles passed 1.000
+epoch 19  train loss 0.0421 acc 0.991  val loss 0.0509  val good bottles passed 1.000
+epoch 20  train loss 0.0185 acc 0.996  val loss 0.0108  val good bottles passed 1.000
+Saved weights/cnn.pt
