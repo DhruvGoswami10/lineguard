@@ -16,6 +16,7 @@ heatmap of where the defect is. The prototype inspects glass bottles (MVTec AD `
 | | Autoencoder | ResNet-18 |
 |---|---|---|
 | Defect images needed for training | **0** | 31 |
+| Labelled images used to set the threshold | 41 (split A) | none (fixed 0.5) |
 | Image AUROC [95% CI] | 0.928 [0.837–0.990] | 0.988 [0.956–1.000] |
 | Defects caught (recall) | 28 / 32 | 31 / 32 |
 | Good bottles wrongly rejected | 2 / 10 | 0 / 10 |
@@ -32,12 +33,15 @@ so the demo needs no dataset, no training and no internet once installed.
 
 **Step 1: install Python 3.12 or 3.13 (64-bit)** from https://www.python.org/downloads/.
 Those are the tested versions. Do not use Python 3.15: PyTorch has no build for it yet.
+Computer: Windows 10/11 or Linux (64-bit), or a Mac with Apple Silicon (M1 or newer) on macOS 14+;
+PyTorch 2.14 has no build for Intel Macs.
 
-**Step 2: open a terminal in this folder** (the one containing `README.md`).
+**Step 2: open a terminal in this folder** (the one containing `README.md`). On Windows, keep the
+folder path short (e.g. `C:\lineguard`): some PyTorch files have long names.
 
 **Step 3: create a virtual environment and install the libraries.**
 
-Windows (PowerShell or Command Prompt):
+Windows (PowerShell or Command Prompt), with Python 3.12 (use `py -3.13` for 3.13):
 
 ```
 py -3.12 -m venv .venv
@@ -64,16 +68,18 @@ before the line above.)
 
 macOS / Linux: the same with `.venv/bin/python` instead of `.venv\Scripts\python`.
 One image works too: `--input samples/broken_small_010.png`. Any `.png`/`.jpg` image can be used.
+The demo runs on the CPU by default, which reproduces the reported scores exactly
+(`--device auto` uses a GPU if one is available).
 
 **What you get**
 
 - One line per image in the terminal: file name, score, threshold, verdict. Example:
 
   ```
-  LineGuard demo | Convolutional autoencoder | REJECT if score >= 0.0045905 | cpu
+  LineGuard demo | Convolutional autoencoder | REJECT if score >= 0.0045313 | cpu
   image                              score   threshold  verdict
-  broken_small_010.png            0.032895   0.0045905  REJECT
-  good_003.png                   0.0027083   0.0045905  OK
+  broken_small_010.png            0.032895   0.0045313  REJECT
+  good_003.png                   0.0027083   0.0045313  OK
   ```
 - One figure per image in `results/demo/`: input | heatmap | verdict.
   Autoencoder heatmap: red = rebuild error above the reject threshold.
@@ -87,12 +93,12 @@ Run these from the project folder with the same Python as above
 
 | Step | Command | What it does | Time |
 |---|---|---|---|
-| Download data | `python -m src.download_data` | MVTec AD `bottle`, 357 files, 157 MB into `data/mvtec/bottle/`, every file hash-checked. Safe to re-run. | ~1 min |
+| Download data | `python -m src.download_data` | MVTec AD `bottle`, 357 files, 157 MB into `data/mvtec/bottle/`; every image SHA-256 checked (the 2 text files by size). Safe to re-run. | ~1 min |
 | Check data | `python -m src.data --check` | Prints image counts per folder; fails loudly if anything is missing | seconds |
 | Train technique 1 | `python -m src.train_ae` | Autoencoder → `weights/ae.pt` (weights + threshold) | GPU ~20 s, CPU ~4 min |
 | Train technique 2 | `python -m src.train_cnn` | ResNet-18 → `weights/cnn.pt` (downloads ImageNet weights once) | GPU ~2.5 min, CPU ~7 min |
 | Evaluate | `python -m src.evaluate` | Scores split B on CPU → `results/` (metrics, plots, heatmaps, `SUMMARY.md`) | ~1 min |
-| Tests | `python -m unittest discover -s tests -v` | 46 unit tests | ~1 min |
+| Tests | `python -m unittest discover -s tests -v` | 51 unit tests | ~1 min |
 
 Notes:
 - Training **overwrites** `weights/`. To keep the shipped weights, add `--out my_weights/ae.pt`
@@ -156,7 +162,8 @@ docs/                  AI prompt log, facts for the report
 
 | Problem | Fix |
 |---|---|
-| `No matching distribution found for torch==2.14.1` | Wrong Python. Use 64-bit Python 3.12 or 3.13. |
+| `No matching distribution found for torch==2.14.1` | Use 64-bit Python 3.12 or 3.13. On a Mac, PyTorch 2.14 needs Apple Silicon and macOS 14+ (no Intel Mac build). |
+| pip fails with a long-path / "No such file or directory" error (Windows) | Move the project to a short path such as `C:\lineguard`, delete `.venv`, and repeat step 3. |
 | `No module named src` | Run commands from the project folder (where `README.md` is). |
 | `py` is not recognised (Windows) | Use the full path to `python.exe` from your Python 3.12 install instead of `py -3.12`. |
 | `Weights not found` | The `weights/` folder is missing: re-extract the full zip, or retrain (section 2). |
@@ -196,4 +203,5 @@ PyTorch layers/optimisers, torchvision's ResNet-18 definition and ImageNet weigh
 SciPy's Gaussian filter.
 
 **AI assistance.** The code was written with Claude Code (Anthropic) under the programming lead's direction.
-Every prompt is logged verbatim in [`docs/ai_prompts.md`](docs/ai_prompts.md), as the unit brief requires.
+The prompts from the coding sessions are logged verbatim in [`docs/ai_prompts.md`](docs/ai_prompts.md), as the
+unit brief requires; the earlier planning prompts (claude.ai) are added to the report appendix by the team.

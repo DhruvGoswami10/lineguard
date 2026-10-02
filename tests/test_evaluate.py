@@ -3,7 +3,8 @@ import unittest
 
 import numpy as np
 
-from src.evaluate import bootstrap_ci, pick_examples, recall_per_type, threshold_metrics
+from src.evaluate import (bootstrap_ci, pick_examples, proportion_ci, recall_per_type,
+                          threshold_metrics)
 
 
 class TestThresholdMetrics(unittest.TestCase):
@@ -25,6 +26,28 @@ class TestThresholdMetrics(unittest.TestCase):
         self.assertEqual(m["f1"], 0.0)
 
 
+class TestProportionCI(unittest.TestCase):
+    """Exact (Clopper-Pearson) intervals; reference values from the binomial formula."""
+
+    def test_all_correct_still_has_uncertainty(self):
+        low, high = proportion_ci(10, 10)
+        self.assertAlmostEqual(low, 0.025 ** (1 / 10), places=4)  # 0.6915
+        self.assertEqual(high, 1.0)
+
+    def test_none_correct(self):
+        low, high = proportion_ci(0, 10)
+        self.assertEqual(low, 0.0)
+        self.assertAlmostEqual(high, 1 - 0.025 ** (1 / 10), places=4)  # 0.3085
+
+    def test_half(self):
+        low, high = proportion_ci(5, 10)
+        self.assertAlmostEqual(low, 0.1871, places=4)
+        self.assertAlmostEqual(high, 0.8129, places=4)
+
+    def test_empty_denominator(self):
+        self.assertTrue(all(np.isnan(v) for v in proportion_ci(0, 0)))
+
+
 class TestBootstrap(unittest.TestCase):
     def setUp(self):
         rng = np.random.default_rng(1)
@@ -33,12 +56,12 @@ class TestBootstrap(unittest.TestCase):
 
     def test_interval_contains_point_estimate_and_is_ordered(self):
         ci = bootstrap_ci(self.scores, self.labels, threshold=1.0, n_boot=300, seed=0)
-        m = threshold_metrics(self.scores, self.labels, 1.0)
-        for key in ("precision", "recall", "f1", "specificity"):
-            low, high = ci[key]
-            self.assertLessEqual(low, high)
-            self.assertLessEqual(low, m[key] + 1e-9)
-            self.assertGreaterEqual(high, m[key] - 1e-9)
+        self.assertEqual(set(ci), {"auroc", "f1"})
+        f1 = threshold_metrics(self.scores, self.labels, 1.0)["f1"]
+        low, high = ci["f1"]
+        self.assertLessEqual(low, f1 + 1e-9)
+        self.assertGreaterEqual(high, f1 - 1e-9)
+        self.assertLessEqual(ci["auroc"][0], ci["auroc"][1])
 
     def test_same_seed_same_interval(self):
         a = bootstrap_ci(self.scores, self.labels, 1.0, n_boot=200, seed=5)

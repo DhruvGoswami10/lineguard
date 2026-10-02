@@ -200,7 +200,8 @@ def main() -> None:
     parser.add_argument("--data-root", default=DEFAULT_ROOT)
     parser.add_argument("--split", default=DEFAULT_SPLIT)
     parser.add_argument("--seed", type=int, default=SEED)
-    parser.add_argument("--check", action="store_true", help="print image counts")
+    parser.add_argument("--check", action="store_true",
+                        help="print image counts (always done; with no other option this is all it does)")
     parser.add_argument("--make-split", action="store_true", help="write the split file")
     parser.add_argument("--force", action="store_true", help="overwrite a different existing split")
     args = parser.parse_args()

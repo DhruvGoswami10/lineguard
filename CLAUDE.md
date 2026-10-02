@@ -137,7 +137,8 @@ docs/report_inputs.md facts and tables for the report writers (no prose)
 - Relative paths only, set via argparse defaults. No absolute paths, no notebooks as the deliverable.
 - Fix seeds (python, numpy, torch) in every script.
 - Device: use CUDA if available, else CPU. Everything must still work on CPU.
-  Exception: `evaluate.py` defaults to CPU because the brief asks for CPU timings.
+  Exceptions: `evaluate.py` and `demo.py` default to CPU (the brief asks for CPU timings, and CPU
+  scores are the ones a marker reproduces); the AE threshold is calibrated on CPU.
 - Short functions, docstrings, and comments that explain *why*. Every team member may be interviewed on this code.
 - Small commits with clear messages. Version control is a marked, mandatory tool.
 
@@ -161,3 +162,7 @@ as `- YYYY-MM-DD — <prompt>`. Don't paraphrase it.
 - 2026-10-02 — CNN uses threshold 0.5 only (split A is its training data).
 - 2026-10-02 — Thresholds stored inside checkpoints; bootstrap CIs added; unittest suite added;
   stdlib download script added.
+- 2026-10-02 (after independent review) — AE threshold placed halfway between neighbouring split-A
+  scores and calibrated on CPU (was exactly on a GPU-computed score; split-B results unchanged).
+  Precision/recall/specificity CIs are exact binomial (bootstrap gave [1.000–1.000] with zero errors).
+  Demo defaults to CPU. All 28 installed packages pinned.

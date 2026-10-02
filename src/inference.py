@@ -62,11 +62,18 @@ def inspect(model, ckpt: dict, image, device, with_heatmap: bool = True) -> dict
 
 
 def best_f1_threshold(scores, labels) -> float:
-    """The threshold (REJECT if score >= threshold) with the highest F1 on this data."""
-    precision, recall, thresholds = precision_recall_curve(labels, scores)
+    """The threshold (REJECT if score >= threshold) with the highest F1 on this data.
+
+    The best cut lies between two neighbouring scores. The threshold is put halfway
+    between them rather than on a score itself, so tiny numerical differences
+    (e.g. GPU vs CPU arithmetic) cannot flip an image to the other side.
+    """
+    precision, recall, thresholds = precision_recall_curve(labels, scores)  # thresholds: sorted unique scores
     f1 = 2 * precision * recall / np.clip(precision + recall, 1e-12, None)
-    # precision/recall carry one extra final entry that has no threshold; skip it.
-    return float(thresholds[np.argmax(f1[:-1])])
+    best = int(np.argmax(f1[:-1]))  # the final precision/recall pair has no threshold; skip it
+    if best == 0:  # rejecting everything was best: there is no lower score to go halfway to
+        return float(thresholds[0])
+    return float((thresholds[best - 1] + thresholds[best]) / 2)
 
 
 def save_checkpoint(path, model, kind: str, threshold: float, config: dict) -> None:

@@ -65,7 +65,7 @@ def run_epoch(model, loader, loss_fn, device, optimizer=None) -> tuple[float, fl
                 loss.backward()
                 optimizer.step()
             total_loss += loss.item() * len(x)
-            correct += (logits.argmax(dim=1) == y).sum().item()  # argmax == probability >= 0.5
+            correct += (logits.argmax(dim=1) == y).sum().item()  # the more likely class (P > 0.5)
             count += len(x)
     return total_loss / count, correct / count
 

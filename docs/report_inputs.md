@@ -4,6 +4,22 @@ For the documentation team. Facts, numbers and tables only; the report wording i
 Every result here comes from `results/SUMMARY.md`; if the two ever disagree, `SUMMARY.md` wins.
 Status: 2026-10-02, prototype complete, tag `v0.1-assignment`.
 
+## 0. Where to find what, per marking criterion
+
+| Report part (marking criterion) | Source |
+|---|---|
+| Title, product description | §1 below |
+| System overview, sub-systems, workflow (requirements & specs, 30–35%) | §2, §3, `architecture.png` |
+| Data and knowledge needed | §4 |
+| AI technique comparison and justification (20%) | §5, §6, `results/SUMMARY.md`, `results/*.png` |
+| Test plan (part of the 30–35%) | §7 |
+| Prototype: code, initial results, steps to run (15–20%) | `README.md` §1–2, §6 here, `results/` |
+| Plan and milestones | §8 |
+| Tools: PM, version control, collaboration, communication (no mark without them) | §9 (two rows for the team to fill) |
+| References | `README.md` §6 |
+| Appendix: AI prompts | `docs/ai_prompts.md` + the team's claude.ai planning prompts |
+| Interview preparation | `docs/walkthrough.md` |
+
 ## 1. Product
 
 | Item | Value |
@@ -12,7 +28,7 @@ Status: 2026-10-02, prototype complete, tag `v0.1-assignment`.
 | What it does | Scores a photo of a manufactured part, decides OK or REJECT, shows a heatmap of where the defect is |
 | Prototype scope | One AI sub-system (defect detection), two techniques compared on the same held-out images |
 | Product inspected in the prototype | Glass bottles (MVTec AD `bottle`): top view, defect types broken_large, broken_small, contamination |
-| Code | Private GitHub repo https://github.com/DhruvGoswami10/lineguard |
+| Code | Private GitHub repo https://github.com/DhruvGoswami10/lineguard (private for academic integrity: the marker gets the zip; the tutor can be invited by GitHub username) |
 
 ## 2. System architecture
 
@@ -41,7 +57,7 @@ Status: 2026-10-02, prototype complete, tag `v0.1-assignment`.
 1. An image file is given to the demo (`python -m src.demo --model ae --input <file or folder>`).
 2. Pre-processing resizes it (128×128 for the AE, 224×224 + ImageNet normalisation for the CNN).
 3. The model scores it: AE = highest smoothed rebuild error; CNN = softmax probability of "defect".
-4. Decision: REJECT if score ≥ threshold (AE 0.00459, chosen on split A; CNN 0.5), else OK.
+4. Decision: REJECT if score ≥ threshold (AE 0.00453, chosen on split A; CNN 0.5), else OK.
 5. A heatmap is made (AE error map / Grad-CAM) and saved with the verdict as a figure.
 6. Final system adds: camera + ingest before step 1; reject signal, QC log, dashboard and alerts after step 4.
 
@@ -82,7 +98,8 @@ Pre-processing per technique:
 |---|---|---|
 | Learning type | Unsupervised (anomaly detection) | Supervised (classification), transfer learning |
 | Trained on | 188 good images only | 198 good + 31 defect images |
-| Defect images needed | **0** | 31 |
+| Defect images needed for training | **0** | 31 |
+| Labelled images used to set the threshold | 41 (split A: 10 good, 31 defect) | none (fixed 0.5) |
 | Architecture | 4 stride-2 conv blocks (32, 64, 128, 64 channels) → 8×8×64 code → mirrored transposed convs, sigmoid | ResNet-18, ImageNet weights, final layer replaced with 2 outputs |
 | Parameters | 594,435 | 11,177,538 |
 | Weights file | 2.4 MB | 44.8 MB |
@@ -90,7 +107,7 @@ Pre-processing per technique:
 | Optimiser | Adam, lr 1e-3, batch 16 | Adam, lr 1e-4, batch 16 |
 | Epochs | up to 100, early stopping (patience 10) on validation loss; kept epoch 100 | 20 (fixed) |
 | Score | max of smoothed rebuild-error map | softmax P(defect) |
-| Threshold | 0.00459 = best F1 on split A | 0.5 (split A is its training data) |
+| Threshold | 0.00453 = best F1 on split A (split-A F1 0.933), placed halfway between neighbouring scores, computed on CPU | 0.5 (split A is its training data) |
 | Heatmap | rebuild-error map (pixel level) | Grad-CAM on layer4 (7×7 grid, upsampled), hand-written with hooks |
 | Training time (development laptop) | GPU 22 s; CPU about 4 min (estimated) | GPU 2.5 min; CPU about 7 min (estimated) |
 
@@ -99,16 +116,17 @@ Pre-processing per technique:
 | Metric | Autoencoder | ResNet-18 |
 |---|---|---|
 | Image AUROC [95% CI] | 0.928 [0.837–0.990] | 0.988 [0.956–1.000] |
-| Precision [95% CI] | 0.933 [0.826–1.000] | 1.000 [1.000–1.000] |
-| Recall [95% CI] | 0.875 [0.750–0.971] | 0.969 [0.903–1.000] |
+| Precision [95% CI] | 0.933 [0.779–0.992] | 1.000 [0.888–1.000] |
+| Recall [95% CI] | 0.875 [0.710–0.965] | 0.969 [0.838–0.999] |
 | F1 [95% CI] | 0.903 [0.815–0.970] | 0.984 [0.949–1.000] |
-| Specificity [95% CI] | 0.800 [0.500–1.000] | 1.000 [1.000–1.000] |
+| Specificity [95% CI] | 0.800 [0.444–0.975] | 1.000 [0.692–1.000] |
 | TP / FN / FP / TN | 28 / 4 / 2 / 8 | 31 / 1 / 0 / 10 |
 | Recall broken_large / broken_small / contamination | 100% / 100% / 64% | 100% / 100% / 91% |
 | CPU ms per image | ~7 | ~21 |
 | Pixel AUROC (localisation) | 0.895 | n/a |
 
-CPU = AMD Ryzen 9 7940HS laptop. CI = 95% bootstrap interval (1,000 resamples of split B).
+CPU = AMD Ryzen 9 7940HS laptop. 95% CI = exact binomial (Clopper–Pearson) interval for precision, recall
+and specificity; bootstrap percentile interval (1,000 resamples of split B) for AUROC and F1.
 
 Figures for the report (all in `results/`):
 
@@ -124,7 +142,8 @@ Figures for the report (all in `results/`):
 
 ## 7. Test plan and results
 
-Automated unit tests: `python -m unittest discover -s tests -v` (46 tests). Result on 2026-10-02: **46 / 46 pass**.
+Automated unit tests: `python -m unittest discover -s tests -v` (51 tests). Result on 2026-10-02: **51 / 51 pass**,
+also in fresh installs on Python 3.12 and 3.13 (CPU only).
 
 | ID | Sub-system | Test | Method | Pass criterion | Result |
 |---|---|---|---|---|---|
@@ -136,14 +155,14 @@ Automated unit tests: `python -m unittest discover -s tests -v` (46 tests). Resu
 | T6 | AI detection | AE output shape/range; 8×8 bottleneck | Unit (`test_models.py`) | 3×128×128 in [0,1] | Pass |
 | T7 | AI detection | ResNet-18 builds offline with 2 outputs | Unit | Shape (N, 2), no download | Pass |
 | T8 | Explanation | Grad-CAM shape, range, hook clean-up | Unit | 7×7 in [0,1]; no hooks left | Pass |
-| T9 | Decision | Threshold rule and best-F1 choice | Unit (hand-worked numbers) | REJECT iff score ≥ threshold | Pass |
+| T9 | Decision | Threshold rule and best-F1 choice (threshold halfway between neighbouring scores) | Unit (hand-worked numbers) | REJECT iff score ≥ threshold; expected threshold values | Pass |
 | T10 | Training | Checkpoint round trip keeps weights + threshold; safe loading | Unit | Identical outputs after reload | Pass |
-| T11 | Evaluation | Metric maths (precision, recall, F1, specificity, bootstrap, per-type recall) | Unit (`test_evaluate.py`, hand-worked numbers) | Exact values | Pass |
+| T11 | Evaluation | Metric maths: counts, precision, recall, F1, specificity, per-type recall, exact binomial intervals, bootstrap intervals | Unit (`test_evaluate.py`) | Hand-worked values for counts, rates and binomial intervals; ordering + repeatability for bootstrap intervals | Pass |
 | T12 | Evaluation | Results pack complete and consistent | Unit (`test_results.py`) | SUMMARY.md = metrics.csv = per-image verdicts | Pass |
 | T13 | Demo | Runs on CPU for both models, file and folder input | Unit (`test_demo.py`, runs the command) | Exit 0, figures written | Pass |
 | T14 | Demo | Demo scores equal evaluation scores | Unit | Same score and verdict for all 20 samples | Pass |
 | T15 | Demo | Bad input gives a clean error | Unit | Non-zero exit, no traceback | Pass |
-| T16 | Whole prototype | Clean install from GitHub on Python 3.12 and 3.13, CPU only, README followed word for word | Manual release check | Tests pass, both demos run | See README / release notes |
+| T16 | Whole prototype | Clean install from GitHub on Python 3.12 and 3.13, CPU only, README followed word for word | Manual release check, 2026-10-02 | Tests pass, both demos run; re-download + re-evaluate gives the same metrics | Pass (both versions; metrics identical except timing) |
 | T17 | AI detection | Accuracy on held-out data | `src/evaluate.py` on split B | Proposed: AUROC ≥ 0.90 | AE 0.928, CNN 0.988 |
 | T18 | AI detection | Speed | `src/evaluate.py` CPU timing | Proposed: < 100 ms/image on CPU | AE ~7 ms, CNN ~21 ms |
 | T18b | Training | Reproducibility: retrain both models from scratch with seed 42 | Manual, 2026-10-02 (same GPU) | Same metrics as reported | Identical: threshold, AUROC, all TP/FN/FP/TN |
@@ -218,4 +237,5 @@ py -3.12 -m venv .venv
 - The CNN has only seen these three defect types; a new defect type may be missed (not testable on MVTec `bottle`).
 - The AE threshold was chosen on split A, where 31 of 41 images are defective; real lines have far fewer
   defects, so the threshold should be re-calibrated on line data.
-- The AE validation loss was still falling at epoch 100 (the maximum the spec allows).
+- The AE validation loss was still falling at epoch 100 (the maximum the spec allows), so early stopping never triggered.
+- Grad-CAM maps are relative (scaled to each image's own maximum), so even a confidently OK bottle shows a red spot.

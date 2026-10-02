@@ -26,6 +26,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from scipy.stats import binomtest
 from sklearn.metrics import roc_auc_score, roc_curve
 
 from src.common import SEED, get_device, set_seed
@@ -75,24 +76,41 @@ def threshold_metrics(scores: np.ndarray, labels: np.ndarray, threshold: float) 
             "f1": f1, "specificity": specificity, "accuracy": (tp + tn) / len(labels)}
 
 
-def bootstrap_ci(scores, labels, threshold, n_boot: int = N_BOOT, seed: int = SEED) -> dict:
-    """95% intervals: resample split B with replacement n_boot times, take the 2.5/97.5 percentiles.
+def proportion_ci(k: int, n: int) -> tuple[float, float]:
+    """Exact 95% (Clopper-Pearson) interval for a rate of k successes out of n.
 
-    Split B has only 42 images (10 good), so every number is uncertain; the
-    interval shows how much one more or one fewer mistake would move it.
+    Used for precision, recall and specificity. Unlike the bootstrap, it still shows
+    uncertainty when there are no errors: 10 of 10 good bottles passed -> 0.69 to 1.00.
     """
+    if n == 0:
+        return (float("nan"), float("nan"))
+    interval = binomtest(k, n).proportion_ci(confidence_level=0.95, method="exact")
+    return (float(interval.low), float(interval.high))
+
+
+def bootstrap_ci(scores, labels, threshold, n_boot: int = N_BOOT, seed: int = SEED) -> dict:
+    """95% intervals for AUROC and F1, which have no exact formula: resample split B
+    with replacement n_boot times and take the 2.5 / 97.5 percentiles."""
     rng = np.random.default_rng(seed)
-    samples = {"auroc": [], "precision": [], "recall": [], "f1": [], "specificity": []}
+    samples = {"auroc": [], "f1": []}
     for _ in range(n_boot):
         idx = rng.integers(0, len(labels), len(labels))
         s, y = scores[idx], labels[idx]
         if y.min() == y.max():  # AUROC needs both good and defect images in the resample
             continue
         samples["auroc"].append(roc_auc_score(y, s))
-        m = threshold_metrics(s, y, threshold)
-        for key in ("precision", "recall", "f1", "specificity"):
-            samples[key].append(m[key])
+        samples["f1"].append(threshold_metrics(s, y, threshold)["f1"])
     return {k: (float(np.percentile(v, 2.5)), float(np.percentile(v, 97.5))) for k, v in samples.items()}
+
+
+def confidence_intervals(scores, labels, threshold, m: dict) -> dict:
+    """All 95% intervals. Split B has only 42 images (10 good), so every number is
+    uncertain; the intervals show how far the true value could plausibly be."""
+    ci = bootstrap_ci(scores, labels, threshold)
+    ci["precision"] = proportion_ci(m["tp"], m["tp"] + m["fp"])
+    ci["recall"] = proportion_ci(m["tp"], m["tp"] + m["fn"])
+    ci["specificity"] = proportion_ci(m["tn"], m["tn"] + m["fp"])
+    return ci
 
 
 def recall_per_type(scores, types, threshold) -> dict:
@@ -112,7 +130,8 @@ def evaluate_model(kind, scored, labels, types, threshold, items, root) -> dict:
     scores = scored["scores"]
     m = threshold_metrics(scores, labels, threshold)
     m.update({"auroc": float(roc_auc_score(labels, scores)), "threshold": threshold,
-              "ci": bootstrap_ci(scores, labels, threshold), "per_type": recall_per_type(scores, types, threshold),
+              "ci": confidence_intervals(scores, labels, threshold, m),
+              "per_type": recall_per_type(scores, types, threshold),
               "ms_per_image": float(scored["ms"].mean()),
               "pixel_auroc": pixel_auroc(scored["maps"], items, root) if kind == "ae" else None})
     return m
@@ -233,6 +252,8 @@ def write_csv(rows: list[dict], path: Path) -> None:
 # ----------------------------------------------------------------------------
 def fmt_ci(m: dict, key: str, digits: int = 3) -> str:
     low, high = m["ci"][key]
+    if np.isnan(low):
+        return f"{m[key]:.{digits}f} [n/a]"
     return f"{m[key]:.{digits}f} [{low:.{digits}f}–{high:.{digits}f}]"
 
 
@@ -247,7 +268,8 @@ def takeaway(kind: str, m: dict, config: dict) -> str:
     weak = (f"weakest defect type: {weakest} ({m['per_type'][weakest]:.0%} caught)"
             if m["per_type"][weakest] < 1 else "caught 100% of every defect type")
     if kind == "ae":
-        trained = f"Learned from {config['n_train']} defect-free images only (0 defect images)"
+        trained = (f"Learned from {config['n_train']} defect-free images only (0 defect images in training; "
+                   "threshold set on the 41 labelled split-A images)")
         rule = "at its split-A threshold"
     else:
         trained = f"Trained with {config['n_defect_images_used']} labelled defect images"
@@ -260,8 +282,10 @@ def write_summary(path: Path, split: dict, results: dict, configs: dict) -> None
     ae, cnn = results["ae"]["metrics"], results["cnn"]["metrics"]
     n_b = len(split["split_b"])
     n_b_good = sum(i["label"] == 0 for i in split["split_b"])
+    n_a = len(split["split_a"])
     rows = [
         ("Defect images used in training", "0", str(configs["cnn"]["n_defect_images_used"])),
+        ("Labelled images used to set the threshold", f"{n_a} (split A)", "none (fixed 0.5)"),
         ("Image AUROC [95% CI]", fmt_ci(ae, "auroc"), fmt_ci(cnn, "auroc")),
         ("Threshold (REJECT if score ≥)", f"{ae['threshold']:.5f} (best F1 on split A)", "0.5 (fixed)"),
         ("Precision [95% CI]", fmt_ci(ae, "precision"), fmt_ci(cnn, "precision")),
@@ -305,8 +329,9 @@ def write_summary(path: Path, split: dict, results: dict, configs: dict) -> None
         "|---|---|---|",
         table,
         "",
-        f"95% CI = bootstrap percentile interval ({N_BOOT} resamples of split B). With only {n_b_good} good images, "
-        f"one false alarm moves specificity by {100 / n_b_good:.0f} percentage points.",
+        "95% CI: exact binomial (Clopper–Pearson) interval for precision, recall and specificity; "
+        f"bootstrap percentile interval ({N_BOOT} resamples of split B) for AUROC and F1. "
+        f"With only {n_b_good} good images, one false alarm moves specificity by {100 / n_b_good:.0f} percentage points.",
         "",
         "## Takeaways",
         "",

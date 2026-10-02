@@ -76,17 +76,28 @@ class TestGradCAM(unittest.TestCase):
 
 
 class TestThreshold(unittest.TestCase):
-    def test_separable_scores(self):
+    def test_separable_scores_threshold_in_the_gap(self):
+        # Rejecting 0.7 and above is perfect; the threshold goes halfway into the gap (0.3 .. 0.7)
+        # so tiny numerical differences (GPU vs CPU) cannot flip a calibration image.
         scores = [0.1, 0.2, 0.3, 0.7, 0.8, 0.9]
         labels = [0, 0, 0, 1, 1, 1]
-        self.assertAlmostEqual(best_f1_threshold(scores, labels), 0.7)
+        self.assertAlmostEqual(best_f1_threshold(scores, labels), 0.5)
 
-    def test_rule_is_score_at_or_above_threshold(self):
-        # Best F1 (0.8) comes from rejecting every score >= 0.35, which includes
-        # the defect scored exactly 0.35 - so the rule must be ">=".
-        scores = [0.1, 0.4, 0.35, 0.9]
-        labels = [0, 0, 1, 1]
-        self.assertAlmostEqual(best_f1_threshold(scores, labels), 0.35)
+    def test_best_f1_choice_with_overlap(self):
+        # Best F1 (0.8) = reject every score >= 0.35 (which includes the defect at 0.35).
+        # The next lower score is 0.1, so the threshold is the midpoint 0.225.
+        scores = np.array([0.1, 0.4, 0.35, 0.9])
+        labels = np.array([0, 0, 1, 1])
+        threshold = best_f1_threshold(scores, labels)
+        self.assertAlmostEqual(threshold, 0.225)
+        reject = scores >= threshold
+        tp, fp = int((reject & (labels == 1)).sum()), int((reject & (labels == 0)).sum())
+        self.assertEqual((tp, fp), (2, 1))  # precision 2/3, recall 1 -> F1 0.8
+
+    def test_rejecting_everything_uses_lowest_score(self):
+        scores = [0.5, 0.6, 0.7]
+        labels = [1, 1, 1]
+        self.assertAlmostEqual(best_f1_threshold(scores, labels), 0.5)
 
 
 class TestInspect(unittest.TestCase):

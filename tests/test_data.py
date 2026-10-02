@@ -4,7 +4,6 @@ A fake MVTec 'bottle' folder with tiny images (same file names as the real
 dataset) is built in a temp directory, so these tests run without the
 real 157 MB download.
 """
-import json
 import shutil
 import tempfile
 import unittest

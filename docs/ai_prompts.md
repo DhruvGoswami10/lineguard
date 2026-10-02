@@ -170,3 +170,30 @@ as `- YYYY-MM-DD — <prompt>`. Don't paraphrase it.
 - 2026-10-02 — ok now tell me about the assignment and what we have to do for the assignment 1. I want to finish it all and give it to the team for the documentation. so talk short and give me full plan
 
 - 2026-10-02 — let's do everything today and finish it and I then give full package to the team. tell me is this going to be like collab notebook or how is it going to be??
+
+---
+
+## Prompts Claude Code sent to its own helper agents
+
+Not typed by the team: Claude Code wrote these itself while working on the requests above.
+Listed for completeness, verbatim.
+
+- 2026-10-02 — independent code review before submission (findings were fixed in the commit
+  "Apply independent review fixes")
+
+```text
+You are reviewing a small Python ML project before it is submitted for a university assignment tomorrow. Be adversarial and precise. READ-ONLY: do not edit, create, or delete any files, and do not run git commands that change state. You may run Python read-only checks with the project venv.
+
+Project: C:\Users\ASUS\Documents\MU\ICT304\lineguard (Windows). Python venv: C:\Users\ASUS\Documents\MU\ICT304\lineguard\.venv\Scripts\python.exe. Run any command from that folder. Dataset is present at data/mvtec/bottle. The spec is CLAUDE.md. Code is in src/, tests in tests/ (run: .venv\Scripts\python -m unittest discover -s tests). Results in results/ (SUMMARY.md, metrics.csv, scores_split_b.csv). README.md and docs/report_inputs.md make claims about the code and results.
+
+What it does: MVTec AD 'bottle' defect detection. Two techniques: a convolutional autoencoder (trained on good images only; score = max of Gaussian-smoothed squared reconstruction error; threshold = best F1 on 'split A') and a ResNet-18 classifier (trained on train/good + split A; threshold 0.5; Grad-CAM heatmaps). Split B is held out and must be used ONLY by src/evaluate.py.
+
+Check, in this priority order:
+1. Data leakage: can any split-B image influence training, threshold choice, or model selection anywhere? Is split A/B/train/val disjoint in splits/bottle_split.json? Does any script other than evaluate.py touch split_b?
+2. Correctness bugs in metrics (src/evaluate.py: threshold_metrics, bootstrap_ci, recall_per_type, pixel_auroc, pick_examples), in best_f1_threshold (src/inference.py; check sklearn precision_recall_curve semantics and the >= rule), in Grad-CAM (src/gradcam.py), and in the autoencoder scoring.
+3. Reproducibility risks for a marker on a different machine (Windows/macOS/Linux, CPU only, no internet after pip install): anything that would make `python -m src.demo --model ae --input samples/` or `--model cnn` fail; hard-coded absolute paths; anything needing the dataset or internet in the demo path; encoding issues; Python 3.12/3.13 compatibility.
+4. Claims in README.md, docs/report_inputs.md and results/SUMMARY.md that do not match the code or results (numbers, file names, test counts, commands).
+5. Anything in the code a student could not defend in an interview (misleading comments, dead code).
+
+Report: a numbered list of concrete findings, most severe first. For each: file:line, what is wrong, a concrete failure scenario, and the fix. Separate "real bugs / wrong claims" from "minor / style". If you verify something is correct, say so in one line (e.g. "split disjointness: verified"). Keep the report under 600 words.
+```
