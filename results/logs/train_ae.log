@@ -105,5 +105,5 @@ epoch  97  train MSE 0.00030  val MSE 0.00031
 epoch  98  train MSE 0.00029  val MSE 0.00030
 epoch  99  train MSE 0.00029  val MSE 0.00030
 epoch 100  train MSE 0.00029  val MSE 0.00029
-Kept epoch 100 (val MSE 0.00029). Threshold (best F1 on split A): 0.00459
+Kept epoch 100 (val MSE 0.00029). Threshold (best F1 on split A): 0.00453 (split-A F1 0.933)
 Saved weights/ae.pt

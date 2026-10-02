@@ -1,24 +1,24 @@
-LineGuard demo | Convolutional autoencoder | REJECT if score >= 0.0045905 | cpu
+LineGuard demo | Convolutional autoencoder | REJECT if score >= 0.0045313 | cpu
 image                              score   threshold  verdict
-broken_large_002.png           0.0071026   0.0045905  REJECT
-broken_large_003.png            0.010149   0.0045905  REJECT
-broken_large_007.png           0.0064812   0.0045905  REJECT
-broken_small_001.png            0.021127   0.0045905  REJECT
-broken_small_010.png            0.032895   0.0045905  REJECT
-broken_small_011.png            0.027059   0.0045905  REJECT
-contamination_000.png          0.0033172   0.0045905  OK
-contamination_001.png          0.0030358   0.0045905  OK
-contamination_002.png          0.0051074   0.0045905  REJECT
-contamination_005.png          0.0091335   0.0045905  REJECT
-good_000.png                   0.0042589   0.0045905  OK
-good_002.png                   0.0055601   0.0045905  REJECT
-good_003.png                   0.0027083   0.0045905  OK
-good_007.png                   0.0033095   0.0045905  OK
-good_008.png                   0.0033183   0.0045905  OK
-good_009.png                    0.002681   0.0045905  OK
-good_010.png                   0.0048109   0.0045905  REJECT
-good_013.png                   0.0026877   0.0045905  OK
-good_018.png                   0.0020732   0.0045905  OK
-good_019.png                    0.002963   0.0045905  OK
+broken_large_002.png           0.0071026   0.0045313  REJECT
+broken_large_003.png            0.010149   0.0045313  REJECT
+broken_large_007.png           0.0064812   0.0045313  REJECT
+broken_small_001.png            0.021127   0.0045313  REJECT
+broken_small_010.png            0.032895   0.0045313  REJECT
+broken_small_011.png            0.027059   0.0045313  REJECT
+contamination_000.png          0.0033172   0.0045313  OK
+contamination_001.png          0.0030358   0.0045313  OK
+contamination_002.png          0.0051074   0.0045313  REJECT
+contamination_005.png          0.0091335   0.0045313  REJECT
+good_000.png                   0.0042589   0.0045313  OK
+good_002.png                   0.0055601   0.0045313  REJECT
+good_003.png                   0.0027083   0.0045313  OK
+good_007.png                   0.0033095   0.0045313  OK
+good_008.png                   0.0033183   0.0045313  OK
+good_009.png                    0.002681   0.0045313  OK
+good_010.png                   0.0048109   0.0045313  REJECT
+good_013.png                   0.0026877   0.0045313  OK
+good_018.png                   0.0020732   0.0045313  OK
+good_019.png                    0.002963   0.0045313  OK
 
 20 images: 10 OK, 10 REJECT. Figures saved to results/demo/

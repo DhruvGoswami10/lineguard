@@ -5,14 +5,16 @@
 1. Train on the 188 'train' images (all good) to rebuild their own input (MSE loss).
 2. After each epoch, measure the loss on the 21 'val' images (also good). Stop when it
    has not improved for --patience epochs, and keep the best epoch's weights.
-3. Score split A and choose the threshold with the best F1. This is the
-   autoencoder's ONLY use of split A; it never trains on a defect image.
+3. Score split A on the CPU and choose the threshold with the best F1 (placed halfway
+   between neighbouring scores). This is the autoencoder's ONLY use of split A;
+   it never trains on a defect image.
 4. Save weights + threshold to weights/ae.pt and the loss curve to results/.
 """
 import argparse
 import copy
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
@@ -79,11 +81,17 @@ def train(model, train_loader, val_loader, device, args) -> dict:
     return {"history": history, "best_epoch": best_epoch, "best_val_mse": best_loss}
 
 
-def calibrate_threshold(model, root, items, sigma, device) -> float:
-    """Score every split-A image and return the threshold with the best F1."""
-    scores = [ae_inspect(model, load_image(Path(root) / item["path"]), sigma, device)[0]
-              for item in items]
-    return best_f1_threshold(scores, [item["label"] for item in items])
+def calibrate_threshold(model, root, items, sigma, device) -> tuple[float, float]:
+    """Score every split-A image; return (threshold with the best F1, that F1)."""
+    scores = np.array([ae_inspect(model, load_image(Path(root) / item["path"]), sigma, device)[0]
+                       for item in items])
+    labels = np.array([item["label"] for item in items])
+    threshold = best_f1_threshold(scores, labels)
+    reject = scores >= threshold
+    tp = int(np.sum(reject & (labels == 1)))
+    fp = int(np.sum(reject & (labels == 0)))
+    fn = int(np.sum(~reject & (labels == 1)))
+    return threshold, 2 * tp / (2 * tp + fp + fn)  # F1 written with counts
 
 
 def main() -> None:
@@ -106,18 +114,23 @@ def main() -> None:
     result = train(model, train_loader, val_loader, device, args)
     model.eval()
 
-    threshold = calibrate_threshold(model, args.data_root, split["split_a"], args.sigma, device)
+    # Calibrate on the CPU: the evaluation and the demo run on the CPU, so the threshold
+    # is chosen from exactly the scores they will compute.
+    model.cpu()
+    threshold, split_a_f1 = calibrate_threshold(model, args.data_root, split["split_a"], args.sigma,
+                                                torch.device("cpu"))
     print(f"Kept epoch {result['best_epoch']} (val MSE {result['best_val_mse']:.5f}). "
-          f"Threshold (best F1 on split A): {threshold:.5f}")
+          f"Threshold (best F1 on split A): {threshold:.5f} (split-A F1 {split_a_f1:.3f})")
 
     config = {
         "input_size": 128, "channels": list(AE_CHANNELS), "loss": "MSE", "optimizer": "Adam",
         "lr": args.lr, "batch_size": args.batch_size, "max_epochs": args.epochs,
         "patience": args.patience, "epochs_run": len(result["history"]["train"]),
         "best_epoch": result["best_epoch"], "best_val_mse": result["best_val_mse"],
-        "sigma": args.sigma, "threshold_rule": "best F1 on split A",
-        "n_train": len(x_train), "n_val": len(x_val), "n_defect_images_used": 0,
-        "seed": args.seed, "trained_on": str(device), "torch": torch.__version__,
+        "sigma": args.sigma, "threshold_rule": "best F1 on split A (midpoint between neighbouring scores)",
+        "split_a_f1": split_a_f1, "n_train": len(x_train), "n_val": len(x_val),
+        "n_defect_images_used": 0, "seed": args.seed, "trained_on": str(device), "calibrated_on": "cpu",
+        "torch": torch.__version__,
     }
     save_checkpoint(args.out, model, "ae", threshold, config)
     plot_curves(result["history"], Path(args.results) / "ae_training_curve.png",

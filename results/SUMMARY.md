@@ -18,25 +18,26 @@ Dataset: MVTec AD, category `bottle` (CC BY-NC-SA 4.0). Split: `splits/bottle_sp
 | Metric | Autoencoder (technique 1) | ResNet-18 (technique 2) |
 |---|---|---|
 | Defect images used in training | 0 | 31 |
+| Labelled images used to set the threshold | 41 (split A) | none (fixed 0.5) |
 | Image AUROC [95% CI] | 0.928 [0.837–0.990] | 0.988 [0.956–1.000] |
-| Threshold (REJECT if score ≥) | 0.00459 (best F1 on split A) | 0.5 (fixed) |
-| Precision [95% CI] | 0.933 [0.826–1.000] | 1.000 [1.000–1.000] |
-| Recall (defects caught) [95% CI] | 0.875 [0.750–0.971] | 0.969 [0.903–1.000] |
+| Threshold (REJECT if score ≥) | 0.00453 (best F1 on split A) | 0.5 (fixed) |
+| Precision [95% CI] | 0.933 [0.779–0.992] | 1.000 [0.888–1.000] |
+| Recall (defects caught) [95% CI] | 0.875 [0.710–0.965] | 0.969 [0.838–0.999] |
 | F1 [95% CI] | 0.903 [0.815–0.970] | 0.984 [0.949–1.000] |
-| Specificity (good bottles passed) [95% CI] | 0.800 [0.500–1.000] | 1.000 [1.000–1.000] |
+| Specificity (good bottles passed) [95% CI] | 0.800 [0.444–0.975] | 1.000 [0.692–1.000] |
 | Accuracy | 0.857 | 0.976 |
 | Confusion matrix TP / FN / FP / TN | 28 / 4 / 2 / 8 | 31 / 1 / 0 / 10 |
 | Recall: broken_large | 100% | 100% |
 | Recall: broken_small | 100% | 100% |
 | Recall: contamination | 64% | 91% |
-| Mean CPU time per image (ms) | 7.4 | 20.6 |
+| Mean CPU time per image (ms) | 7.3 | 20.8 |
 | Pixel-level AUROC (defect localisation) | 0.895 | n/a (Grad-CAM is not a pixel mask) |
 
-95% CI = bootstrap percentile interval (1000 resamples of split B). With only 10 good images, one false alarm moves specificity by 10 percentage points.
+95% CI: exact binomial (Clopper–Pearson) interval for precision, recall and specificity; bootstrap percentile interval (1000 resamples of split B) for AUROC and F1. With only 10 good images, one false alarm moves specificity by 10 percentage points.
 
 ## Takeaways
 
-- **Autoencoder:** Learned from 188 defect-free images only (0 defect images). AUROC 0.928; at its split-A threshold it rejected 28/32 defective and 2/10 good bottles; weakest defect type: contamination (64% caught).
+- **Autoencoder:** Learned from 188 defect-free images only (0 defect images in training; threshold set on the 41 labelled split-A images). AUROC 0.928; at its split-A threshold it rejected 28/32 defective and 2/10 good bottles; weakest defect type: contamination (64% caught).
 - **ResNet-18:** Trained with 31 labelled defect images. AUROC 0.988; at threshold 0.5 it rejected 31/32 defective and 0/10 good bottles; weakest defect type: contamination (91% caught).
 
 ## Hyperparameters
@@ -55,12 +56,14 @@ Dataset: MVTec AD, category `bottle` (CC BY-NC-SA 4.0). Split: `splits/bottle_sp
 | best_epoch | 100 |
 | best_val_mse | 0.000294087 |
 | sigma | 4 |
-| threshold_rule | best F1 on split A |
+| threshold_rule | best F1 on split A (midpoint between neighbouring scores) |
+| split_a_f1 | 0.933333 |
 | n_train | 188 |
 | n_val | 21 |
 | n_defect_images_used | 0 |
 | seed | 42 |
 | trained_on | cuda |
+| calibrated_on | cpu |
 | torch | 2.14.1+cu130 |
 
 | ResNet-18 | Value |

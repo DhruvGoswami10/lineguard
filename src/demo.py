@@ -36,7 +36,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--input", required=True, help="an image file or a folder of images")
     p.add_argument("--weights", default="weights", help="folder containing ae.pt and cnn.pt")
     p.add_argument("--out", default="results/demo", help="where the figures are saved")
-    p.add_argument("--device", default="auto", help="auto (GPU if available), cpu or cuda")
+    # CPU by default: it is what the marker has, and it reproduces the reported scores exactly.
+    p.add_argument("--device", default="cpu", help="cpu (default), auto (GPU if available) or cuda")
     return p.parse_args()
 
 
@@ -67,7 +68,8 @@ def main() -> None:
         print(f"{path.name:<28}{result['score']:>12{fmt}}{result['threshold']:>12{fmt}}  {result['verdict']}")
         save_verdict_figure(image, result, args.model, Path(args.out) / f"{args.model}_{path.stem}.png",
                             f"LineGuard | {MODEL_NAMES[args.model]} | {path.name}")
-    print(f"\n{sum(counts.values())} images: {counts['OK']} OK, {counts['REJECT']} REJECT. "
+    total = sum(counts.values())
+    print(f"\n{total} image{'' if total == 1 else 's'}: {counts['OK']} OK, {counts['REJECT']} REJECT. "
           f"Figures saved to {args.out}/")
 
 

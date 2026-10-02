@@ -1,6 +1,9 @@
-# LineGuard - exact versions tested (Python 3.12 and 3.13, 64-bit).
+# LineGuard - every package pinned to the exact version tested on 2026-10-02
+# (fresh installs on Windows 11 with Python 3.12.7 and 3.13.1 resolved identical sets).
 # On Windows and macOS this installs the CPU build of PyTorch, which is all the demo needs.
-# GPU training (optional), see README: "Optional: train on an NVIDIA GPU".
+# Optional GPU training: see README, "Optional: train on an NVIDIA GPU".
+
+# Direct dependencies
 torch==2.14.1
 torchvision==0.29.1
 numpy==2.5.3
@@ -8,3 +11,26 @@ scipy==1.18.1
 scikit-learn==1.9.1
 matplotlib==3.11.2
 pillow==12.3.0
+
+# Installed automatically by the packages above (pinned for a repeatable install)
+cloudpickle==3.1.2
+contourpy==1.4.0
+cycler==0.12.1
+filelock==4.0.9
+fonttools==4.66.1
+fsspec==2026.9.0
+Jinja2==3.1.6
+joblib==1.6.0
+kiwisolver==1.5.1
+MarkupSafe==3.0.3
+mpmath==1.3.0
+narwhals==2.26.0
+networkx==3.7
+packaging==26.3
+pyparsing==3.3.3
+python-dateutil==2.9.0.post0
+setuptools==84.0.0
+six==1.17.0
+sympy==1.14.0
+threadpoolctl==3.7.0
+typing_extensions==4.16.0

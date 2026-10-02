@@ -47,10 +47,12 @@ def save_verdict_figure(image: Image.Image, result: dict, kind: str, out_path, t
     """Three panels: input image | heatmap overlay | verdict with score and threshold.
 
     Autoencoder heatmaps are scaled so red means "error at or above the reject
-    threshold". Grad-CAM maps are already scaled 0..1 per image (standard Grad-CAM).
+    threshold". Grad-CAM maps are scaled 0..1 per image (standard Grad-CAM), so they
+    are relative: even a confidently OK image shows its strongest spot in red.
     """
     vmax = result["threshold"] if kind == "ae" else 1.0
-    heat_title = "Rebuild error (red = over threshold)" if kind == "ae" else "Grad-CAM: evidence for 'defect'"
+    heat_title = ("Rebuild error (red = over threshold)" if kind == "ae"
+                  else "Grad-CAM for 'defect' (relative: own max = red)")
 
     fig, axes = plt.subplots(1, 3, figsize=(10.5, 3.7), gridspec_kw={"width_ratios": [1, 1, 0.8]})
     axes[0].imshow(image.convert("RGB").resize((DISPLAY_SIZE, DISPLAY_SIZE), Image.BILINEAR))
