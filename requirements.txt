@@ -1,0 +1,10 @@
+# LineGuard - exact versions tested (Python 3.12 and 3.13, 64-bit).
+# On Windows and macOS this installs the CPU build of PyTorch, which is all the demo needs.
+# GPU training (optional), see README: "Optional: train on an NVIDIA GPU".
+torch==2.14.1
+torchvision==0.29.1
+numpy==2.5.3
+scipy==1.18.1
+scikit-learn==1.9.1
+matplotlib==3.11.2
+pillow==12.3.0

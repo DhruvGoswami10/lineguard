@@ -1,0 +1,47 @@
+// LineGuard architecture. Render: dot -Tpng docs/architecture.dot -o docs/architecture.png
+digraph LineGuard {
+  rankdir=LR;
+  graph [fontname="Helvetica", fontsize=13, labelloc=t, pad=0.3, nodesep=0.3, ranksep=0.5,
+         label="LineGuard system architecture\nsolid = built in the prototype (Assignment 1)    dashed = planned for the final system (7 Nov)\n "];
+  node  [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11, fillcolor="#dbeafe", color="#1e3a8a"];
+  edge  [fontname="Helvetica", fontsize=9, color="#334155"];
+
+  subgraph cluster_online {
+    label="Online: inspection of each part"; fontsize=11; style="rounded"; color="#94a3b8";
+    camera  [label="Camera / webcam\nimage acquisition", style="rounded,dashed", fillcolor=white];
+    ingest  [label="Ingest\nfolder watcher", style="rounded,dashed", fillcolor=white];
+    files   [label="Image file(s)\nprototype input"];
+    pre     [label="Pre-processing\nresize, scale / normalise"];
+    ai      [label="AI defect detection\nAE: rebuild error score\nCNN: P(defect)", fillcolor="#fde68a", color="#92400e", penwidth=2];
+    decide  [label="Decision\nscore >= threshold\n-> REJECT, else OK"];
+    explain [label="Explanation\nAE error map / Grad-CAM"];
+    out     [label="Verdict + heatmap figure\nconsole, results/demo/"];
+    reject  [label="Reject signal\nto line controller", style="rounded,dashed", fillcolor=white];
+    qclog   [label="QC log\nSQLite", style="rounded,dashed", fillcolor=white];
+    dash    [label="Operator dashboard\nlive view, review queue, KPIs", style="rounded,dashed", fillcolor=white];
+    alerts  [label="Alerts\ndefect-rate spike", style="rounded,dashed", fillcolor=white];
+  }
+
+  subgraph cluster_offline {
+    label="Offline: building the models"; fontsize=11; style="rounded"; color="#94a3b8";
+    data    [label="MVTec AD bottle\n+ fixed split A / B", shape=cylinder, fillcolor="#e2e8f0"];
+    train   [label="Training + calibration\ntrain_ae.py / train_cnn.py"];
+    evalb   [label="Evaluation on split B\nevaluate.py"];
+    weights [label="weights/*.pt\nmodel + threshold", shape=cylinder, fillcolor="#e2e8f0"];
+  }
+
+  camera -> ingest [style=dashed];
+  ingest -> pre [style=dashed];
+  files -> pre -> ai -> decide -> out;
+  ai -> explain -> out;
+  decide -> reject [style=dashed];
+  decide -> qclog [style=dashed];
+  qclog -> dash [style=dashed];
+  qclog -> alerts [style=dashed];
+  dash -> data [style=dashed, label="operator-confirmed labels\n(retraining)", constraint=false];
+
+  data -> train -> weights;
+  weights -> evalb;
+  data -> evalb;
+  weights -> ai [label="loaded at start"];
+}
