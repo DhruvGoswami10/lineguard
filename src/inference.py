@@ -5,6 +5,7 @@ as the evaluation that produced the reported numbers.
 
 Decision rule for both models: REJECT if score >= threshold, otherwise OK.
 """
+import json
 from pathlib import Path
 
 import numpy as np
@@ -73,6 +74,9 @@ def save_checkpoint(path, model, kind: str, threshold: float, config: dict) -> N
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     state = {k: v.detach().cpu() for k, v in model.state_dict().items()}  # loadable without a GPU
+    # The safe loader (weights_only=True) only accepts plain types, so round-trip the
+    # config through JSON: tuples become lists, library objects become strings.
+    config = json.loads(json.dumps(config, default=str))
     torch.save({"kind": kind, "state_dict": state, "threshold": float(threshold), "config": config}, path)
 
 

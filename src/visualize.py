@@ -63,7 +63,8 @@ def save_verdict_figure(image: Image.Image, result: dict, kind: str, out_path, t
     colour = "green" if result["verdict"] == "OK" else "red"
     axes[2].text(0.5, 0.7, result["verdict"], color=colour, fontsize=30, weight="bold",
                  ha="center", va="center")
-    lines = [f"score     {result['score']:.4g}", f"threshold {result['threshold']:.4g}"]
+    fmt = ".4g" if kind == "ae" else ".4f"  # CNN probabilities: fixed decimals, so 0.9999 never shows as "1"
+    lines = [f"score     {result['score']:{fmt}}", f"threshold {result['threshold']:{fmt}}"]
     if truth:
         lines.append(f"truth     {truth}")
     axes[2].text(0.5, 0.32, "\n".join(lines), family="monospace", fontsize=10, ha="center", va="center")

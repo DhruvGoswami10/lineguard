@@ -1,0 +1,10 @@
+Dataset: data\mvtec\bottle
+  train/good            209 images
+  test/good              20 images
+  test/broken_large      20 images
+  test/broken_small      22 images
+  test/contamination     21 images
+Evaluating on split B: 42 images (10 good, 32 defect), device cpu
+Convolutional autoencoder: AUROC 0.928, precision 0.933, recall 0.875, F1 0.903, 7.4 ms/image
+ResNet-18 classifier: AUROC 0.988, precision 1.000, recall 0.969, F1 0.984, 20.6 ms/image
+Results written to results/ (start with SUMMARY.md)

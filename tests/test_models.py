@@ -139,6 +139,18 @@ class TestCheckpoint(unittest.TestCase):
         with torch.no_grad():
             self.assertTrue(torch.allclose(model(x), loaded(x)))
 
+    def test_config_with_library_objects_still_loads_safely(self):
+        # torch.__version__ is a TorchVersion object, which the safe loader refuses;
+        # save_checkpoint must store plain values only.
+        model = ConvAutoencoder().eval()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "ae.pt"
+            save_checkpoint(path, model, kind="ae", threshold=0.1,
+                            config={"sigma": 4.0, "torch": torch.__version__, "channels": (1, 2)})
+            _, ckpt = load_model(path, CPU)
+        self.assertEqual(ckpt["config"]["torch"], str(torch.__version__))
+        self.assertEqual(ckpt["config"]["channels"], [1, 2])
+
     def test_missing_file_gives_clear_error(self):
         with self.assertRaises(FileNotFoundError):
             load_model(Path("does/not/exist.pt"), CPU)
