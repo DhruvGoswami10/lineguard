@@ -1,0 +1,17 @@
+# Dataset (download with: python -m src.download_data)
+data/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Scratch output from smoke tests
+tmp/
