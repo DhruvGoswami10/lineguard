@@ -171,6 +171,8 @@ as `- YYYY-MM-DD — <prompt>`. Don't paraphrase it.
 
 - 2026-10-02 — let's do everything today and finish it and I then give full package to the team. tell me is this going to be like collab notebook or how is it going to be??
 
+- 2026-10-03 — how do I check the code? I want to check and test everything and is there anything left or you finished it all? and can this be a google collab thing or no?
+
 ---
 
 ## Prompts Claude Code sent to its own helper agents
