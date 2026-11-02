@@ -109,3 +109,52 @@ fine-tune it on our images, including 31 labelled defect photos. The score is it
 15. **How would you improve it?** More good images, augmentation for the AE, SSIM loss instead of MSE, or a
     stronger unsupervised method (e.g. PatchCore, which uses pretrained features); re-calibrate the threshold
     on real line data; test on more products.
+
+## The final system
+
+**One inspection, end to end** (`src/run_line.py`). A frame comes from the source
+(`VideoSource` wraps OpenCV's `VideoCapture`, so a file path and a camera index are the same
+code; `FolderSource` replays image files). `find_parts()` thresholds the station ROI at a
+grey level (the belt is backlit, the part is dark), labels the connected dark blobs and
+keeps those big enough to be a part, noting whether each touches the left edge (entering)
+or the right edge (leaving). `PresenceTrigger.update()` picks the right-most undecided
+blob, scores it on each frame it is fully inside, and after N votes (or when it starts to
+leave) says "decide". Decided parts are followed by their x position until they leave, so
+when the next part enters before the previous has left (parts closer than the station is
+wide) it is still treated as new. `crop_part()` cuts a square around the blob with the
+dataset's margin, so the model sees the same framing as in training.
+
+`Line.finish_part()` takes the median of the frame scores (`decision.vote`), reads the
+current rule (the dashboard's settings if the operator saved any, else the checkpoint's
+thresholds), decides, saves the crop and the heatmap figure, writes the QC log row, fires
+the reject signal on REJECT, and checks the alert rules. The frame drawn into the annotated
+video shows the station box (grey empty, yellow collecting, green/orange/red decided), the
+part box, the last verdict and score, the counters and the heatmap inset.
+
+**Why two thresholds.** REJECT at `t_high` keeps the prototype's calibrated rule, so the
+evaluation numbers still describe the line. The REVIEW band below it (`t_low`, the 95th
+percentile of scores of good images the model never trained on) sends borderline parts to
+a person: on a real line scrapping a good part or shipping a bad one both cost more than a
+look. Severity is the excess over `t_high` as a percentage, so the same bands work for the
+autoencoder's 0.004 scale and FoundAD's 11.5 scale.
+
+**Why the QC log is SQLite.** One file, no server, in the standard library, safe for two
+processes (the runner writes, the dashboard reads and writes settings). It also holds the
+operator's confirmations of REVIEW parts, which is how labelled data accumulates for a
+future retrain.
+
+**Alerts** are the two rules from the design. The p-chart limit is
+`p0 + 3·sqrt(p0(1-p0)/n)`; with the defaults (5 %, 20 parts) it is 19.6 %, so a window
+with 4 or more rejects in 20 raises the alert. The monitor raises each incident once and
+again only after the condition has cleared. A stall is `stall_seconds` without a part.
+
+**The demo feed** (`src/make_line_video.py`) exists because the proof of concept must be
+reproducible on any machine: the 20 held-out photos move across a rendered belt under a
+fixed camera. Only the motion is simulated; the bottles are the dataset's images. The
+manifest it writes is used by the end-to-end test to check one decision per part and that
+good parts pass while defective ones do not.
+
+**Testing.** Every subsystem has hand-worked unit tests (`tests/test_decision.py`,
+`test_qclog.py`, `test_alerts.py`, `test_acquisition.py`, `test_foundad.py`,
+`test_dashboard.py` with Streamlit's headless harness), and `tests/test_line.py` renders
+a four-part video and runs the real runner on it (T23).
