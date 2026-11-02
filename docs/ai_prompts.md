@@ -199,3 +199,16 @@ Check, in this priority order:
 
 Report: a numbered list of concrete findings, most severe first. For each: file:line, what is wrong, a concrete failure scenario, and the fix. Separate "real bugs / wrong claims" from "minor / style". If you verify something is correct, say so in one line (e.g. "split disjointness: verified"). Keep the report under 600 words.
 ```
+
+- 2026-11-02 — (multi-line prompt, verbatim below; attached: ICT304_Assignment1_SentinelVision.zip, Project_Feedback_Sheet.docx, a LinkedIn post screenshot about FoundAD egg-line anomaly detection; links: https://github.com/ymxlzgy/FoundAD and https://github.com/DhruvGoswami10/lineguard.git)
+
+```text
+so this is the assignment 1 we did and now for the assignment2 I was thinking of 2 things:
+
+* we use that foundAD repo and we optimize and finish the implementation of lineguard
+
+
+I toold that I will add cam between step 1 and 2 fro live monitoring and make few changes and this is my goal to do when I say changes. so let's do this. let me know if you need more stuff
+```
+
+- 2026-11-03 — (answer to the camera-stage question) `this is just a POC and has to work for this demo. the idea is that I want to use a recorded video and not live shit. so what can we do here as quick win that is not AI generated video and built on real stuff??`
