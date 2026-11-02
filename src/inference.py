@@ -1,9 +1,10 @@
-"""One scoring path, shared by threshold calibration, evaluation and the demo.
+"""One scoring path, shared by threshold calibration, evaluation, the demo and the line.
 
 Keeping it in one place guarantees the demo computes exactly the same score
 as the evaluation that produced the reported numbers.
 
-Decision rule for both models: REJECT if score >= threshold, otherwise OK.
+Decision rule for every model: REJECT if score >= threshold, otherwise OK.
+(The final system's REVIEW band sits on top of this rule: see src/decision.py.)
 """
 import json
 from pathlib import Path
@@ -14,10 +15,13 @@ from scipy.ndimage import gaussian_filter
 from sklearn.metrics import precision_recall_curve
 
 from src.data import ae_transform, cnn_transform
+from src.dino import load_dino
+from src.foundad import FoundAD, Predictor, foundad_inspect
 from src.gradcam import GradCAM
 from src.models import ConvAutoencoder, build_resnet18
 
 AE_SIGMA = 4.0  # Gaussian smoothing of the error map, in pixels of the 128x128 map
+MODEL_KINDS = ("ae", "cnn", "foundad")
 
 
 def ae_inspect(model, image, sigma: float, device) -> tuple[float, np.ndarray]:
@@ -54,11 +58,14 @@ def inspect(model, ckpt: dict, image, device, with_heatmap: bool = True) -> dict
     """Score one PIL image with a loaded model; returns score, threshold, verdict, heatmap."""
     if ckpt["kind"] == "ae":
         score, heatmap = ae_inspect(model, image, ckpt["config"]["sigma"], device)
+    elif ckpt["kind"] == "foundad":
+        score, heatmap = foundad_inspect(model, image, ckpt["config"]["input_size"], device)
     else:
         score, heatmap = cnn_inspect(model, image, device, with_heatmap)
     threshold = ckpt["threshold"]
     verdict = "REJECT" if score >= threshold else "OK"
-    return {"score": score, "threshold": threshold, "verdict": verdict, "heatmap": heatmap}
+    return {"score": score, "threshold": threshold, "verdict": verdict, "heatmap": heatmap,
+            "map_floor": ckpt["config"].get("map_floor", 0.0)}  # display scale of the heatmap
 
 
 def best_f1_threshold(scores, labels) -> float:
@@ -87,12 +94,32 @@ def save_checkpoint(path, model, kind: str, threshold: float, config: dict) -> N
     torch.save({"kind": kind, "state_dict": state, "threshold": float(threshold), "config": config}, path)
 
 
-def build_model(kind: str) -> torch.nn.Module:
+def build_model(kind: str, config: dict | None = None, ckpt_dir=None) -> torch.nn.Module:
+    """An untrained model of the given kind (the checkpoint's weights are loaded next).
+
+    FoundAD is the exception: its frozen DINOv2 encoder is not part of the checkpoint
+    (it is 88 MB and never changes) but is read from its own file next to the
+    checkpoint, or in weights/ (see src/download_backbone.py).
+    """
     if kind == "ae":
         return ConvAutoencoder()
     if kind == "cnn":
         return build_resnet18(pretrained=False)  # our own weights are loaded next: no download
+    if kind == "foundad":
+        encoder = load_dino(find_backbone(config["backbone_file"], ckpt_dir), config["backbone"])
+        predictor = Predictor(encoder.dim, config["predictor_width"], config["predictor_depth"],
+                              config["predictor_heads"])
+        return FoundAD(encoder, predictor, config["n_from_end"], config["top_k"])
     raise ValueError(f"Unknown model kind: {kind}")
+
+
+def find_backbone(file_name: str, ckpt_dir=None) -> Path:
+    for folder in ([Path(ckpt_dir)] if ckpt_dir else []) + [Path("weights")]:
+        if (folder / file_name).is_file():
+            return folder / file_name
+    raise FileNotFoundError(
+        f"DINOv2 weights not found: {file_name}. Run `python -m src.download_backbone` once "
+        "(88 MB, hash-checked); after that everything works offline.")
 
 
 def load_model(path, device) -> tuple[torch.nn.Module, dict]:
@@ -101,8 +128,12 @@ def load_model(path, device) -> tuple[torch.nn.Module, dict]:
     if not path.is_file():
         raise FileNotFoundError(
             f"Weights not found: {path}. They ship in weights/ - check the zip was fully "
-            "extracted, or retrain with `python -m src.train_ae` / `python -m src.train_cnn`.")
+            "extracted, or retrain with `python -m src.train_ae` / `python -m src.train_cnn` / "
+            "`python -m src.train_foundad`.")
     ckpt = torch.load(path, map_location=device, weights_only=True)  # weights_only: safe loading
-    model = build_model(ckpt["kind"])
-    model.load_state_dict(ckpt["state_dict"])
+    model = build_model(ckpt["kind"], ckpt.get("config"), path.parent)
+    if ckpt["kind"] == "foundad":
+        model.predictor.load_state_dict(ckpt["state_dict"])  # the encoder has its own weights
+    else:
+        model.load_state_dict(ckpt["state_dict"])
     return model.to(device).eval(), ckpt
