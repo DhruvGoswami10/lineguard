@@ -6,9 +6,8 @@ import unittest
 from pathlib import Path
 
 RESULTS = Path(__file__).resolve().parents[1] / "results"
-EXPECTED_FILES = ["SUMMARY.md", "metrics.csv", "scores_split_b.csv", "roc.png", "score_hist_ae.png",
-                  "score_hist_cnn.png", "confusion_matrices.png", "ae_training_curve.png",
-                  "cnn_training_curve.png"]
+EXPECTED_FILES = ["SUMMARY.md", "metrics.csv", "scores_split_b.csv", "roc.png", "confusion_matrices.png"]
+PER_MODEL_FILES = ["score_hist_{kind}.png", "{kind}_training_curve.png"]
 
 
 def read_csv(path: Path) -> list[dict]:
@@ -26,9 +25,15 @@ class TestResultsPack(unittest.TestCase):
     def test_all_files_exist(self):
         for name in EXPECTED_FILES:
             self.assertTrue((RESULTS / name).is_file(), name)
+        for kind in self.metrics:
+            for pattern in PER_MODEL_FILES:
+                self.assertTrue((RESULTS / pattern.format(kind=kind)).is_file(), pattern.format(kind=kind))
+
+    def test_every_technique_is_in_the_pack(self):
+        self.assertEqual(set(self.metrics), {"ae", "cnn", "foundad"})
 
     def test_six_heatmaps_per_model(self):
-        for kind in ("ae", "cnn"):
+        for kind in self.metrics:
             self.assertEqual(len(list((RESULTS / "heatmaps").glob(f"{kind}_*.png"))), 6, kind)
 
     def test_summary_quotes_metrics_csv(self):

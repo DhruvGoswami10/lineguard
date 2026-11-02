@@ -1,4 +1,4 @@
-"""Evaluate both models on split B - the images neither model ever learned from.
+"""Evaluate every model on split B - the images none of them ever learned from.
 
     python -m src.evaluate
 
@@ -7,10 +7,9 @@ are what a marker can reproduce on any machine.
 
 Writes to results/:
     metrics.csv            one row per model (all numbers below)
-    scores_split_b.csv     per-image scores and verdicts for both models
-    roc.png                ROC curves of both models
-    score_hist_ae.png      score distributions (good vs defect) with the threshold
-    score_hist_cnn.png
+    scores_split_b.csv     per-image scores and verdicts for every model
+    roc.png                ROC curves of every model
+    score_hist_<model>.png score distributions (good vs defect) with the threshold
     confusion_matrices.png
     heatmaps/              6 examples per model, correct and incorrect
     SUMMARY.md             the handoff for the report writers
@@ -32,11 +31,12 @@ from sklearn.metrics import roc_auc_score, roc_curve
 from src.common import SEED, get_device, set_seed
 from src.data import (AE_SIZE, DEFAULT_ROOT, DEFAULT_SPLIT, DEFECT_TYPES, check_layout, load_image,
                       load_mask, load_split)
+from src.foundad import upsample_map
 from src.inference import inspect, load_model
-from src.visualize import plt, save_figure, save_verdict_figure
+from src.visualize import MODEL_NAMES as MODELS, plt, save_figure, save_verdict_figure
 
-MODELS = {"ae": "Convolutional autoencoder", "cnn": "ResNet-18 classifier"}
 N_BOOT = 1000
+LOCALISED = ("ae", "foundad")  # models whose heatmap is a pixel / patch error map, scored against the masks
 
 
 # ----------------------------------------------------------------------------
@@ -54,7 +54,7 @@ def score_items(model, ckpt, root: Path, items: list[dict], device) -> dict:
         result = inspect(model, ckpt, image, device, with_heatmap=False)
         times.append((time.perf_counter() - start) * 1000)
         scores.append(result["score"])
-        maps.append(result["heatmap"])  # AE error map (needed for its score); None for the CNN
+        maps.append(result["heatmap"])  # AE / FoundAD error map (part of their score); None for the CNN
     return {"scores": np.array(scores), "ms": np.array(times), "maps": maps}
 
 
@@ -119,10 +119,13 @@ def recall_per_type(scores, types, threshold) -> dict:
 
 
 def pixel_auroc(maps, items, root) -> float:
-    """How well the AE error map ranks defect pixels above normal pixels (128x128 masks)."""
+    """How well an error map ranks defect pixels above normal pixels, against the 128x128
+    masks. The AE map is already 128x128; FoundAD's 32x32 patch grid is upsampled to it,
+    so both are scored on the same pixels."""
     masks = [load_mask(root, item, AE_SIZE) for item in items]
     truth = np.concatenate([m.ravel() for m in masks])
-    predicted = np.concatenate([p.ravel() for p in maps])
+    predicted = np.concatenate([(p if p.shape == (AE_SIZE, AE_SIZE) else upsample_map(p, AE_SIZE)).ravel()
+                                for p in maps])
     return float(roc_auc_score(truth, predicted))
 
 
@@ -133,7 +136,7 @@ def evaluate_model(kind, scored, labels, types, threshold, items, root) -> dict:
               "ci": confidence_intervals(scores, labels, threshold, m),
               "per_type": recall_per_type(scores, types, threshold),
               "ms_per_image": float(scored["ms"].mean()),
-              "pixel_auroc": pixel_auroc(scored["maps"], items, root) if kind == "ae" else None})
+              "pixel_auroc": pixel_auroc(scored["maps"], items, root) if kind in LOCALISED else None})
     return m
 
 
@@ -199,7 +202,8 @@ def plot_score_hist(kind, scores, labels, threshold, out_path) -> None:
     ax.hist(scores[labels == 0], bins=bins, alpha=0.6, color="tab:green", label="good")
     ax.hist(scores[labels == 1], bins=bins, alpha=0.6, color="tab:red", label="defect")
     ax.axvline(threshold, color="black", linestyle="--", label=f"threshold {threshold:.4g}")
-    xlabel = "anomaly score (max smoothed rebuild error)" if kind == "ae" else "P(defect)"
+    xlabel = {"ae": "anomaly score (max smoothed rebuild error)", "cnn": "P(defect)",
+              "foundad": "anomaly score (mean of top-10 patch feature errors)"}[kind]
     ax.set(title=f"{MODELS[kind]}: scores on split B", xlabel=xlabel, ylabel="images")
     ax.legend()
     fig.tight_layout()
@@ -207,7 +211,7 @@ def plot_score_hist(kind, scores, labels, threshold, out_path) -> None:
 
 
 def plot_confusion(results: dict, out_path) -> None:
-    fig, axes = plt.subplots(1, len(results), figsize=(9, 4))
+    fig, axes = plt.subplots(1, len(results), figsize=(4.5 * len(results), 4))
     for ax, (kind, r) in zip(axes, results.items()):
         m = r["metrics"]
         grid = np.array([[m["tn"], m["fp"]], [m["fn"], m["tp"]]])
@@ -271,6 +275,10 @@ def takeaway(kind: str, m: dict, config: dict) -> str:
         trained = (f"Learned from {config['n_train']} defect-free images only (0 defect images in training; "
                    "threshold set on the 41 labelled split-A images)")
         rule = "at its split-A threshold"
+    elif kind == "foundad":
+        trained = (f"Learned from only {config['n_train']} defect-free images on top of a frozen DINOv2 encoder "
+                   "(0 defect images in training; threshold set on the 41 labelled split-A images)")
+        rule = "at its split-A threshold"
     else:
         trained = f"Trained with {config['n_defect_images_used']} labelled defect images"
         rule = "at threshold 0.5"
@@ -278,56 +286,73 @@ def takeaway(kind: str, m: dict, config: dict) -> str:
             f"and {m['fp']}/{n_good} good bottles; {weak}.")
 
 
+def training_cells(kind: str, config: dict, n_a: int) -> dict:
+    """The data-requirement rows of the summary table, per model."""
+    if kind == "cnn":
+        return {"good": str(config["n_train_good"]), "defect": str(config["n_defect_images_used"]),
+                "labelled": "none (fixed 0.5)", "threshold": "fixed"}
+    return {"good": str(config["n_train"]), "defect": "0", "labelled": f"{n_a} (split A)",
+            "threshold": "best F1 on split A"}
+
+
 def write_summary(path: Path, split: dict, results: dict, configs: dict) -> None:
-    ae, cnn = results["ae"]["metrics"], results["cnn"]["metrics"]
+    kinds = list(results)
+    ms = {k: results[k]["metrics"] for k in kinds}
     n_b = len(split["split_b"])
     n_b_good = sum(i["label"] == 0 for i in split["split_b"])
     n_a = len(split["split_a"])
+    cells = {k: training_cells(k, configs[k], n_a) for k in kinds}
+
+    def row(label, fn):
+        return "| " + label + " | " + " | ".join(fn(k, ms[k]) for k in kinds) + " |"
+
     rows = [
-        ("Defect images used in training", "0", str(configs["cnn"]["n_defect_images_used"])),
-        ("Labelled images used to set the threshold", f"{n_a} (split A)", "none (fixed 0.5)"),
-        ("Image AUROC [95% CI]", fmt_ci(ae, "auroc"), fmt_ci(cnn, "auroc")),
-        ("Threshold (REJECT if score ≥)", f"{ae['threshold']:.5f} (best F1 on split A)", "0.5 (fixed)"),
-        ("Precision [95% CI]", fmt_ci(ae, "precision"), fmt_ci(cnn, "precision")),
-        ("Recall (defects caught) [95% CI]", fmt_ci(ae, "recall"), fmt_ci(cnn, "recall")),
-        ("F1 [95% CI]", fmt_ci(ae, "f1"), fmt_ci(cnn, "f1")),
-        ("Specificity (good bottles passed) [95% CI]", fmt_ci(ae, "specificity"), fmt_ci(cnn, "specificity")),
-        ("Accuracy", f"{ae['accuracy']:.3f}", f"{cnn['accuracy']:.3f}"),
-        ("Confusion matrix TP / FN / FP / TN",
-         f"{ae['tp']} / {ae['fn']} / {ae['fp']} / {ae['tn']}", f"{cnn['tp']} / {cnn['fn']} / {cnn['fp']} / {cnn['tn']}"),
+        row("Good images used in training", lambda k, m: cells[k]["good"]),
+        row("Defect images used in training", lambda k, m: cells[k]["defect"]),
+        row("Labelled images used to set the threshold", lambda k, m: cells[k]["labelled"]),
+        row("Image AUROC [95% CI]", lambda k, m: fmt_ci(m, "auroc")),
+        row("Threshold (REJECT if score ≥)", lambda k, m: f"{m['threshold']:.5f} ({cells[k]['threshold']})"),
+        row("Precision [95% CI]", lambda k, m: fmt_ci(m, "precision")),
+        row("Recall (defects caught) [95% CI]", lambda k, m: fmt_ci(m, "recall")),
+        row("F1 [95% CI]", lambda k, m: fmt_ci(m, "f1")),
+        row("Specificity (good bottles passed) [95% CI]", lambda k, m: fmt_ci(m, "specificity")),
+        row("Accuracy", lambda k, m: f"{m['accuracy']:.3f}"),
+        row("Confusion matrix TP / FN / FP / TN", lambda k, m: f"{m['tp']} / {m['fn']} / {m['fp']} / {m['tn']}"),
     ]
-    rows += [(f"Recall: {t}", f"{ae['per_type'][t]:.0%}", f"{cnn['per_type'][t]:.0%}") for t in DEFECT_TYPES]
+    rows += [row(f"Recall: {t}", lambda k, m, t=t: f"{m['per_type'][t]:.0%}") for t in DEFECT_TYPES]
     rows += [
-        ("Mean CPU time per image (ms)", f"{ae['ms_per_image']:.1f}", f"{cnn['ms_per_image']:.1f}"),
-        ("Pixel-level AUROC (defect localisation)", f"{ae['pixel_auroc']:.3f}", "n/a (Grad-CAM is not a pixel mask)"),
+        row("Mean CPU time per image (ms)", lambda k, m: f"{m['ms_per_image']:.1f}"),
+        row("Pixel-level AUROC (defect localisation)",
+            lambda k, m: "n/a (Grad-CAM is not a pixel mask)" if m["pixel_auroc"] is None else f"{m['pixel_auroc']:.3f}"),
     ]
-    table = "\n".join(f"| {a} | {b} | {c} |" for a, b, c in rows)
+    header = "| Metric | " + " | ".join(f"{MODELS[k]} (technique {i})" for i, k in enumerate(kinds, 1)) + " |"
+    divider = "|---|" + "---|" * len(kinds)
 
     lines = [
-        "# LineGuard prototype: results summary",
+        "# LineGuard: results summary",
         "",
         f"Generated by `python -m src.evaluate` on {date.today().isoformat()}. "
         f"All numbers are from **split B only**: {n_b} held-out images ({n_b_good} good, {n_b - n_b_good} defect) "
-        "that neither model learned from.",
+        "that no model learned from.",
         "",
         "## Data",
         "",
         "| Part | Images | Used for |",
         "|---|---|---|",
-        f"| train | {len(split['train'])} good | AE training; CNN training |",
-        f"| val | {len(split['val'])} good | AE early stopping; CNN monitoring only |",
+        f"| train | {len(split['train'])} good | AE training; CNN training; FoundAD's few-shot images are drawn from here |",
+        f"| val | {len(split['val'])} good | AE early stopping; CNN monitoring; FoundAD REVIEW threshold (with split-A good) |",
         f"| split A | {len(split['split_a'])} ({sum(i['label'] == 0 for i in split['split_a'])} good, "
-        f"{sum(i['label'] for i in split['split_a'])} defect) | CNN training; AE threshold only |",
-        f"| split B | {n_b} ({n_b_good} good, {n_b - n_b_good} defect) | evaluation of both models, nothing else |",
+        f"{sum(i['label'] for i in split['split_a'])} defect) | CNN training; AE and FoundAD REJECT threshold only |",
+        f"| split B | {n_b} ({n_b_good} good, {n_b - n_b_good} defect) | evaluation of every model, nothing else |",
         "",
         "Dataset: MVTec AD, category `bottle` (CC BY-NC-SA 4.0). Split: `splits/bottle_split.json`, seed "
         f"{split['seed']}, stratified 50/50 by folder.",
         "",
         "## Results on split B",
         "",
-        "| Metric | Autoencoder (technique 1) | ResNet-18 (technique 2) |",
-        "|---|---|---|",
-        table,
+        header,
+        divider,
+        *rows,
         "",
         "95% CI: exact binomial (Clopper–Pearson) interval for precision, recall and specificity; "
         f"bootstrap percentile interval ({N_BOOT} resamples of split B) for AUROC and F1. "
@@ -335,26 +360,22 @@ def write_summary(path: Path, split: dict, results: dict, configs: dict) -> None
         "",
         "## Takeaways",
         "",
-        f"- **Autoencoder:** {takeaway('ae', ae, configs['ae'])}",
-        f"- **ResNet-18:** {takeaway('cnn', cnn, configs['cnn'])}",
+        *[f"- **{MODELS[k]}:** {takeaway(k, ms[k], configs[k])}" for k in kinds],
         "",
         "## Hyperparameters",
         "",
-        "| Autoencoder | Value |",
-        "|---|---|",
-        *[f"| {k} | {fmt_value(v)} |" for k, v in configs["ae"].items()],
-        "",
-        "| ResNet-18 | Value |",
-        "|---|---|",
-        *[f"| {k} | {fmt_value(v)} |" for k, v in configs["cnn"].items()],
-        "",
+    ]
+    for k in kinds:
+        lines += [f"| {MODELS[k]} | Value |", "|---|---|",
+                  *[f"| {key} | {fmt_value(v)} |" for key, v in configs[k].items()], ""]
+    lines += [
         "## Files",
         "",
         "- `metrics.csv`: every number above, one row per model",
         "- `scores_split_b.csv`: per-image scores and verdicts",
-        "- `roc.png`, `score_hist_ae.png`, `score_hist_cnn.png`, `confusion_matrices.png`",
+        "- `roc.png`, `score_hist_<model>.png`, `confusion_matrices.png`",
         "- `heatmaps/`: 6 examples per model (file name says correct-reject / correct-ok / missed-defect / false-alarm)",
-        "- `ae_training_curve.png`, `cnn_training_curve.png`, `logs/`: training history",
+        "- `<model>_training_curve.png`, `logs/`: training history",
         "",
         "## Environment",
         "",
@@ -366,16 +387,19 @@ def write_summary(path: Path, split: dict, results: dict, configs: dict) -> None
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
+
 # ----------------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------------
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Evaluate both models on split B.")
+    p = argparse.ArgumentParser(description="Evaluate the models on split B.")
     p.add_argument("--data-root", default=DEFAULT_ROOT)
     p.add_argument("--split", default=DEFAULT_SPLIT)
     p.add_argument("--weights", default="weights")
     p.add_argument("--out", default="results")
     p.add_argument("--device", default="cpu", help="cpu (default, for CPU timings) or cuda")
+    p.add_argument("--models", nargs="+", default=list(MODELS), choices=list(MODELS),
+                   help="which models to evaluate (default: all three)")
     return p.parse_args()
 
 
@@ -395,7 +419,7 @@ def main() -> None:
     for old in (out / "heatmaps").glob("*.png"):  # examples can change between runs
         old.unlink()
     results, configs, per_image = {}, {}, {i["path"]: dict(i) for i in items}
-    for kind in MODELS:
+    for kind in args.models:
         model, ckpt = load_model(Path(args.weights) / f"{kind}.pt", device)
         scored = score_items(model, ckpt, root, items, device)
         metrics = evaluate_model(kind, scored, labels, types, ckpt["threshold"], items, root)
@@ -411,7 +435,7 @@ def main() -> None:
               f"recall {metrics['recall']:.3f}, F1 {metrics['f1']:.3f}, {metrics['ms_per_image']:.1f} ms/image")
 
     out.mkdir(parents=True, exist_ok=True)
-    write_csv([metrics_row(k, results[k]["metrics"], configs[k]) for k in MODELS], out / "metrics.csv")
+    write_csv([metrics_row(k, results[k]["metrics"], configs[k]) for k in results], out / "metrics.csv")
     write_csv(list(per_image.values()), out / "scores_split_b.csv")
     plot_roc(labels, results, out / "roc.png")
     plot_confusion(results, out / "confusion_matrices.png")

@@ -1,9 +1,11 @@
 """LineGuard demo: inspect bottle images, print OK / REJECT, save a heatmap figure.
 
-    python -m src.demo --model ae  --input samples/
-    python -m src.demo --model cnn --input samples/broken_small_010.png
+    python -m src.demo --model ae      --input samples/
+    python -m src.demo --model cnn     --input samples/broken_small_010.png
+    python -m src.demo --model foundad --input samples/
 
-Needs only weights/ and the images: no dataset, no training, no internet.
+Needs only weights/ and the images: no dataset, no training, no internet
+(FoundAD also needs the DINOv2 file in weights/: `python -m src.download_backbone`, once).
 For each image it prints the score, the threshold and the verdict, and saves an
 image | heatmap | verdict figure to results/demo/<model>_<image name>.png.
 """
@@ -13,11 +15,10 @@ from pathlib import Path
 
 from src.common import get_device, set_seed
 from src.data import load_image
-from src.inference import inspect, load_model
-from src.visualize import save_verdict_figure
+from src.inference import MODEL_KINDS, inspect, load_model
+from src.visualize import MODEL_NAMES, save_verdict_figure
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp"}
-MODEL_NAMES = {"ae": "Convolutional autoencoder", "cnn": "ResNet-18 classifier"}
 
 
 def find_images(path: Path) -> list[Path]:
@@ -31,10 +32,11 @@ def find_images(path: Path) -> list[Path]:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="LineGuard demo: OK / REJECT with a heatmap per image.")
-    p.add_argument("--model", required=True, choices=["ae", "cnn"],
-                   help="ae = autoencoder (technique 1), cnn = ResNet-18 (technique 2)")
+    p.add_argument("--model", required=True, choices=list(MODEL_KINDS),
+                   help="ae = autoencoder (technique 1), cnn = ResNet-18 (technique 2), "
+                        "foundad = DINOv2 few-shot detector (technique 3)")
     p.add_argument("--input", required=True, help="an image file or a folder of images")
-    p.add_argument("--weights", default="weights", help="folder containing ae.pt and cnn.pt")
+    p.add_argument("--weights", default="weights", help="folder containing ae.pt, cnn.pt, foundad.pt")
     p.add_argument("--out", default="results/demo", help="where the figures are saved")
     # CPU by default: it is what the marker has, and it reproduces the reported scores exactly.
     p.add_argument("--device", default="cpu", help="cpu (default), auto (GPU if available) or cuda")
@@ -53,7 +55,7 @@ def main() -> None:
     if not images:
         sys.exit(f"Error: no images ({', '.join(sorted(IMAGE_SUFFIXES))}) found in {args.input}")
 
-    fmt = ".5g" if args.model == "ae" else ".5f"  # probabilities: fixed decimals (0.999996 -> 1.00000)
+    fmt = ".5f" if args.model == "cnn" else ".5g"  # probabilities: fixed decimals (0.999996 -> 1.00000)
     print(f"LineGuard demo | {MODEL_NAMES[args.model]} | REJECT if score >= {ckpt['threshold']:{fmt}} | {device}")
     print(f"{'image':<28}{'score':>12}{'threshold':>12}  verdict")
     counts = {"OK": 0, "REJECT": 0}
