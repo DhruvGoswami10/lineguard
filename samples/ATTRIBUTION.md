@@ -9,6 +9,16 @@ so the demo shows the models on unseen bottles. Selection rule (no cherry-pickin
 all 10 good images in split B, then the first 3 `broken_large`, first 3 `broken_small`
 and first 4 `contamination` images of split B by file name.
 
+## The demo camera feed (`line_demo.mp4`)
+
+`line_demo.mp4` is rendered by `python -m src.make_line_video` from these same 20 images:
+each photograph is resized, turned by a random angle and moved across a plain white
+"belt" between two dark rails, so that the line runner can be demonstrated and tested
+without a camera. The bottles are the dataset's photographs, unmodified apart from
+scaling and rotation; nothing in the video is generated. `line_demo.manifest.json`
+records which image is which part. The video is a derivative of the dataset and is
+shared under the same CC BY-NC-SA 4.0 licence.
+
 ## Licence
 
 Copyright 2019 MVTec Software GmbH. Licensed under the Creative Commons
