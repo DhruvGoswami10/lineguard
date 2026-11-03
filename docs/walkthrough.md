@@ -134,13 +134,15 @@ part box, the last verdict and score, the counters and the heatmap inset.
 **Why two thresholds.** `t_low` is the prototype's calibrated threshold (best F1 on split A),
 so the evaluation numbers still describe the line: a part at or above it does not pass. The
 band above it, up to `t_high`, sends borderline parts to a person: on a real line scrapping a
-good part or shipping a bad one both cost more than a look. `t_high` is placed above every
-good image the model was calibrated on (halfway between the highest of them, 3.22, and the
-lowest split-A defect above it, 5.34): with it, 3 of the 31 calibration good images would be
-reviewed and none rejected. The first rule tried (REVIEW from the 95th percentile of good
-scores, capped at the best-F1 cut) gave an empty band, because the best-F1 cut lies inside
-the tail of the good scores. Severity is the excess over `t_high` as a percentage, so the
-same bands work for the autoencoder's 0.004 scale and FoundAD's 4.3 scale.
+good part or shipping a bad one both cost more than a look. `t_high` is the mildest split-A
+defect score above every good image the model was calibrated on (3.26 against a highest good
+of 3.02; `t_low` is the midpoint, 3.14): a REJECT is at least as anomalous as a defect seen in
+calibration, and no calibration good image is rejected. Two earlier rules were dropped after
+real runs: REVIEW from the 95th percentile of good scores (empty band: the best-F1 cut lies
+inside the tail of the good scores), then `t_high` at the midpoint between the highest good
+and the next defect (empty band as soon as split A is separable, because that midpoint *is*
+the best-F1 cut). Severity is the excess over `t_high` as a percentage, so the same bands
+work for the autoencoder's 0.004 scale and FoundAD's 3.3 scale.
 
 **Why the QC log is SQLite.** One file, no server, in the standard library, safe for two
 processes (the runner writes, the dashboard reads and writes settings). It also holds the
@@ -166,8 +168,10 @@ and rotation changed nothing. The hot patches sat in the white belt around the b
 the codec's faint blocks are "texture" the model had never seen. Two changes, both kept and
 both the kind a real camera needs too: the score now only counts patches on the part
 (`patch_foreground`: the belt is not inspected), and training pairs go through a JPEG round
-trip half the time, so compressed-but-normal is normal. The lesson for the report: the
-calibration data must come through the same acquisition path as production.
+trip half the time, so compressed-but-normal is normal. The retrained model decides all 21
+parts of the feed correctly (good 1.05–2.20, defects 4.10–13.8 against lines at 3.14 / 3.26)
+and is still perfect on split B. The lesson for the report: the calibration data must come
+through the same acquisition path as production.
 
 **Testing.** Every subsystem has hand-worked unit tests (`tests/test_decision.py`,
 `test_qclog.py`, `test_alerts.py`, `test_acquisition.py`, `test_foundad.py`,

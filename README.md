@@ -75,14 +75,21 @@ After that nothing needs the internet.
 .venv\Scripts\python -m src.run_line --source samples/line_demo.mp4 --reset
 ```
 
-Each part prints one line as it is decided, for example:
+Each part prints one line as it is decided (this is the committed run, `results/line_demo_run/run_log.txt`;
+the part ids carry the run's start time; on another CPU the scores can differ in the last digits):
 
 ```
-Running on samples/line_demo.mp4: station ROI(x=240, y=60, w=800, h=600), 5 frame votes per part, FoundAD (DINOv2 few-shot) on cpu. ...
-021233-0001  score 10.74   PASS            [5 frames, t_low 11.07, t_high 11.46]
-021233-0002  score 12.38   REJECT (moderate)  [5 frames, t_low 11.07, t_high 11.46]
-REJECT SIGNAL -> 021233-0002 (moderate, score 12.38): divert
+Running on samples/line_demo.mp4: station ROI(x=240, y=60, w=800, h=600), 5 frame votes per part, FoundAD (DINOv2 few-shot) on cpu. Writing results/line/ ...
+063949-0001  score 2.1972  PASS  [5 frames, t_low 3.144, t_high 3.264]
+REJECT SIGNAL -> 063949-0002 (moderate, score 6.5808): divert
+063949-0002  score 6.5808  REJECT (moderate)  [5 frames, t_low 3.144, t_high 3.264]
+063949-0003  score 1.6885  PASS  [5 frames, t_low 3.144, t_high 3.264]
+...
+Done: 21 parts this run; QC log now holds 21 (10 PASS, 0 REVIEW, 11 REJECT). Reject signals fired: 11. Outputs in results/line/
 ```
+
+The feed takes about 100 s on a 2-core CPU (72 s of video); all 21 parts are decided in agreement
+with their labels (10 good PASS, 11 defects REJECT, see `docs/report_inputs.md` §9).
 
 and writes to `results/line/`: `qc_log.sqlite` (every decision), `reject_events.jsonl`,
 `parts/` (the crop and heatmap of every part) and `line_demo_annotated.mp4` (the feed with the
@@ -136,10 +143,10 @@ Run from the project folder with the same Python (written as `python` below).
 | Check data | `python -m src.data --check` | image counts per folder; reports anything missing | seconds |
 | Train technique 1 | `python -m src.train_ae` | autoencoder → `weights/ae.pt` (weights + threshold) | GPU ~20 s, CPU ~4 min |
 | Train technique 2 | `python -m src.train_cnn` | ResNet-18 → `weights/cnn.pt` (downloads ImageNet weights once) | GPU ~2.5 min, CPU ~7 min |
-| Train technique 3 | `python -m src.train_foundad` | predictor on 4 good images with CutPaste, 1000 steps → `weights/foundad.pt` (predictor + both thresholds) | GPU ~3 min, CPU ~1.7 h (`--resume` continues an interrupted run) |
+| Train technique 3 | `python -m src.train_foundad` | predictor on 4 good images with CutPaste, 1000 steps → `weights/foundad.pt` (predictor + both thresholds) | CPU ~1.7 h on 2 cores (`--resume` continues an interrupted run); on a GPU a few minutes (not measured) |
 | Evaluate | `python -m src.evaluate` | scores split B on CPU with all three → `results/` (metrics, plots, heatmaps, `SUMMARY.md`) | ~2 min |
 | Demo feed | `python -m src.make_line_video` | renders `samples/line_demo.mp4` from the 21 sample images (deterministic, seed 42) | ~15 s |
-| Tests | `python -m unittest discover -s tests -v` | unit tests for every subsystem plus an end-to-end run on a short rendered video | ~3 min |
+| Tests | `python -m unittest discover -s tests -v` | 134 unit tests for every subsystem plus an end-to-end run on a short rendered video | ~1.5 min |
 
 Notes:
 
@@ -188,10 +195,10 @@ The 21 images in `samples/` (and therefore the demo feed) are split-B images: no
 3. **Decision.** `score < t_low` PASS; `t_low ≤ score < t_high` REVIEW (a person checks it);
    `score ≥ t_high` REJECT. `t_low` is the model's calibrated threshold (best F1 on split A, as in
    Assignment 1), so the evaluation's numbers still hold: a part at or above it does not pass.
-   `t_high` is set above every good image the model was calibrated on (halfway between the highest
-   of them and the lowest split-A defect above it), so a good part is never rejected outright by the
-   calibration rule; the autoencoder and CNN have no `t_high` of their own (empty band until the
-   operator sets one). FoundAD scores only the patches on the part (Otsu foreground): the belt around
+   `t_high` is the mildest split-A defect score above every good image the model was calibrated on,
+   so a REJECT is at least as anomalous as a defect seen in calibration and a good part is never
+   rejected outright by the calibration rule; the autoencoder and CNN have no `t_high` of their own
+   (empty band until the operator sets one). FoundAD scores only the patches on the part (Otsu foreground): the belt around
    it is not inspected, so codec noise or lighting on the belt cannot reject a part. REJECT severity is the score's excess over `t_high`: minor < 50 %,
    moderate < 150 %, severe beyond (operator-adjustable, scale-free so it works for any model).
 4. **Record and act.** Every decision goes into the QC log with its score, both thresholds, the model
