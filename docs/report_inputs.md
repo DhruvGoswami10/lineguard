@@ -103,8 +103,8 @@ Non-functional (Assignment 1 §6.2), measured: see §8 (CPU time per image for e
 | Features | — | — | output of the 3rd-from-last encoder block after the final LayerNorm (keeps local texture) |
 | Score | max of Gaussian-smoothed error map | softmax P(defect) | mean of the 10 largest patch errors |
 | Heatmap | 128×128 error map | 7×7 Grad-CAM | 32×32 patch-error grid, displayed from the median normal patch error (blue) to t_high (red) |
-| Threshold (PASS line, t_low; the evaluation's binary cut) | best F1 on split A (0.00453) | fixed 0.5 | best F1 on split A (2.362) |
-| REJECT line (t_high) | none (= t_low until the operator sets one) | none (= t_low until the operator sets one) | midpoint between the highest score of 31 unseen good images (val + split-A good; 3.223) and the lowest split-A defect above it (5.344): 4.284 |
+| Threshold (PASS line, t_low; the evaluation's binary cut) | best F1 on split A (0.00453) | fixed 0.5 | best F1 on split A (3.144; split-A F1 1.000) |
+| REJECT line (t_high) | none (= t_low until the operator sets one) | none (= t_low until the operator sets one) | the lowest split-A defect score above all 31 unseen good images (val + split-A good; highest 3.024): 3.264 |
 | Reference | Hinton & Salakhutdinov 2006 | He et al. 2016 | Zhai et al. 2025 (FoundAD); Oquab et al. 2024 (DINOv2); Li et al. 2021 (CutPaste) |
 
 Why technique 3 fits the product: a new product is onboarded with a handful of good photographs (4 here) and no defect library; the encoder is generic (trained on 142 M unlabelled images) so nothing is retrained when the product changes, only the small predictor; unseen defect types are flagged because anything that does not project onto "normal" scores high. DINOv2 was chosen over DINOv3 (FoundAD's default) because DINOv3's weights are gated behind a licence form, which would stop a marker from reproducing the system; DINOv2 is Apache 2.0 and hash-checked by our download script. FoundAD was re-implemented (≈ 300 lines across `dino.py`, `foundad.py`, `train_foundad.py`) rather than vendored: its environment pins Python 3.8 / PyTorch 2.2 and ~20 extra packages, and the brief expects code every team member can explain.
@@ -118,7 +118,7 @@ Why technique 3 fits the product: a new product is onboarded with a handful of g
 | Feature layer | 3rd from last | FoundAD's default; the last block is more semantic, less local |
 | Score | top-10 mean, not max | one noisy patch cannot reject a part; FoundAD's K for MVTec |
 | Threshold rule | best F1 on split A, midpoint between neighbouring scores | unchanged from Assignment 1 so the three models are compared on the same rule |
-| REVIEW band | t_high above every unseen good score (midpoint to the next defect) | no calibration good part is rejected outright; 3 of 31 (10 %) would be reviewed. First rule (95th percentile of good scores, capped at t_low) gave an empty band: the best-F1 cut lies inside the good tail |
+| REVIEW band | t_high = the mildest split-A defect above every unseen good score | a REJECT is at least as anomalous as a calibration defect; no calibration good part is rejected outright. Two rules were dropped after real runs: 95th percentile of good scores capped at t_low (empty band: the best-F1 cut lies inside the good tail), then the midpoint between the highest good and the next defect (empty band once split A is separable, because that midpoint is the best-F1 cut). The current band is narrow (3.14–3.26): the retrained model separates the calibration goods (≤ 3.02) from the defects (≥ 3.26) cleanly, so no demo part lands in it; the operator can widen it in the dashboard |
 | Severity bands | 50 % / 150 % above t_high | the first choice (5 % / 15 %) put every bottle defect in "severe"; the new bands split the split-B defect scores roughly into thirds |
 | Score region | only patches on the part (Otsu foreground on the 32×32 grid) | the first end-to-end run rejected all 21 parts: the video codec's faint blocks in the white belt around the bottle scored as texture (good bottles 5.6–6.7 as video crops vs 1.1–1.8 as PNGs; JPEG q75 alone: 1.7 → 4.1; lossless clip: identical to PNG). Scoring the part only brought the same model to 1.6–2.3 good / 4.8–13 defect on the feed |
 | Compression augmentation | half the training pairs go through a JPEG round trip (q 40–95) | so compressed-but-normal is normal for the predictor: a camera or a video file never delivers PNG-clean frames. Model retrained from scratch with it (run-1 log kept in `results/logs/`) |
@@ -131,13 +131,44 @@ Why technique 3 fits the product: a new product is onboarded with a handful of g
 
 Copy the table from `results/SUMMARY.md` ("Results on split B"); it has all three models with 95 % confidence intervals, per-defect-type recall, CPU time per image and pixel-level AUROC. Plots: `results/roc.png` (three curves), `results/score_hist_{ae,cnn,foundad}.png`, `results/confusion_matrices.png` (three panels), `results/heatmaps/` (6 examples per model), `results/foundad_training_curve.png`.
 
-Headline (fill from SUMMARY.md): {{HEADLINE}}
+Headline (fill from SUMMARY.md): FoundAD, trained on 4 good images and no defect image, reaches image AUROC 1.000 [1.000–1.000] on split B with precision 1.000 and recall 1.000 [0.891–1.000] at its split-A threshold (32/32 defects rejected, 10/10 good passed) and pixel AUROC 0.984; the ResNet-18 (31 defect images in training) reaches 0.988 [0.956–1.000] (recall 0.969) and the autoencoder 0.928 [0.837–0.990] (recall 0.875, specificity 0.800). Cost: 536 ms per image on the 2-core CPU container against 43 ms (ResNet-18) and 10 ms (autoencoder).
 
 How to read the comparison: AUROC is threshold-free and compares the models' ability to rank defects above good parts; precision / recall / F1 are at each model's operating threshold; the intervals are wide because split B has 10 good images (one false alarm = 10 points of specificity).
 
 ## 9. Line results (end-to-end run on the demo feed, `results/line_demo_run/`)
 
-{{LINE_RESULTS}}
+Run: `python -m src.run_line --source samples/line_demo.mp4 --reset` on the 2-core CPU container, FoundAD (committed `weights/foundad.pt`, version `foundad:1cf87096`), 5 frame votes per part, thresholds from the checkpoint (t_low 3.144, t_high 3.264), no operator settings. Feed: 1809 frames, 25 fps, 72 s, 21 real split-B bottles (10 good, 11 defect) at random rotations and positions, mp4v-compressed. Wall time 99 s for the whole feed (≈ 18 frames/s, so a little slower than real time on this machine; the first and last decisions are 77 s apart). Log: `results/line_demo_run/run_log.txt`; every decision with its evidence: `qc_log.csv`, `reject_events.jsonl`, `parts/<id>_heatmap.png`; frames from the annotated video: `annotated_frame_*.png`; dashboard on this log: `dashboard.png`.
+
+| # | Part id | Image (split B) | Truth | Score | Verdict | Severity | Frames | Correct? |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 063949-0001 | good_018.png | good | 2.197 | PASS | — | 5 | yes |
+| 2 | 063949-0002 | broken_small_011.png | broken_small | 6.581 | REJECT | moderate | 5 | yes |
+| 3 | 063949-0003 | good_007.png | good | 1.689 | PASS | — | 5 | yes |
+| 4 | 063949-0004 | broken_small_010.png | broken_small | 9.545 | REJECT | severe | 5 | yes |
+| 5 | 063949-0005 | contamination_002.png | contamination | 4.098 | REJECT | minor | 5 | yes |
+| 6 | 063949-0006 | good_003.png | good | 1.736 | PASS | — | 5 | yes |
+| 7 | 063949-0007 | good_008.png | good | 1.270 | PASS | — | 5 | yes |
+| 8 | 063949-0008 | good_013.png | good | 1.439 | PASS | — | 5 | yes |
+| 9 | 063949-0009 | broken_small_014.png | broken_small | 9.212 | REJECT | severe | 5 | yes |
+| 10 | 063949-0010 | good_002.png | good | 1.683 | PASS | — | 5 | yes |
+| 11 | 063949-0011 | good_010.png | good | 2.030 | PASS | — | 5 | yes |
+| 12 | 063949-0012 | contamination_005.png | contamination | 13.771 | REJECT | severe | 5 | yes |
+| 13 | 063949-0013 | broken_large_003.png | broken_large | 10.800 | REJECT | severe | 5 | yes |
+| 14 | 063949-0014 | good_000.png | good | 1.432 | PASS | — | 5 | yes |
+| 15 | 063949-0015 | broken_large_007.png | broken_large | 11.797 | REJECT | severe | 5 | yes |
+| 16 | 063949-0016 | good_009.png | good | 1.053 | PASS | — | 5 | yes |
+| 17 | 063949-0017 | contamination_000.png | contamination | 13.296 | REJECT | severe | 5 | yes |
+| 18 | 063949-0018 | contamination_001.png | contamination | 6.697 | REJECT | moderate | 5 | yes |
+| 19 | 063949-0019 | broken_large_002.png | broken_large | 12.400 | REJECT | severe | 5 | yes |
+| 20 | 063949-0020 | broken_small_001.png | broken_small | 6.062 | REJECT | moderate | 5 | yes |
+| 21 | 063949-0021 | good_019.png | good | 1.481 | PASS | — | 5 | yes |
+
+- **21 of 21 parts decided in agreement with their label** (PASS for every good bottle, REJECT for every defect); 0 REVIEW; 11 reject signals, one per REJECT (`reject_events.jsonl`).
+- Scores on the feed: good 1.05–2.20, defect 4.10–13.77 (PNG scores of the same images on split B: good ≤ 1.65, defect ≥ 4.36), so the video codec costs about 0.5 on a good part and the margin to t_low (3.14) remains ≈ 1.
+- Severity: 1 minor (`contamination_002`, 4.10: a small blob of contamination), 3 moderate, 7 severe; the rule is the excess over t_high (50 % / 150 %).
+- One alert, as designed: `rate_spike` at part 20 (reject rate 55 % over the last 20 parts, control limit 20 % for a 5 % baseline). The demo feed is 52 % defective, so the p-chart must fire; on a real line this is the signal that something upstream changed. No stall alert (the feed never pauses for 10 s).
+- Every part was decided from 5 frames (no early decision was needed: no part left the station before its votes were in).
+- Heatmaps: every REJECT's red patches sit on the defect (compare `parts/` against `samples/`: the chip of a broken_small, the whole missing wall of a broken_large, the blob of a contamination); good bottles stay blue to green, i.e. below t_high everywhere (the highest-scoring good, `good_018` at 2.20, shows one yellow-green patch inside the mouth).
 
 ## 10. Test plan and results (every subsystem)
 
@@ -145,16 +176,16 @@ Assignment 1 tests T1–T18b still pass (`tests/test_data.py`, `test_models.py`,
 
 | ID | Subsystem | Test | Pass criterion | Where | Result |
 |---|---|---|---|---|---|
-| T19 | Acquisition / trigger | synthetic frames: blob found, entering/leaving flags, small specks ignored, crop centred with the dataset margin and white padding; trigger gives one decision per part with N votes, also when parts are closer than the station width, and decides early when a part leaves; folder source replays each image once in order | as stated | `tests/test_acquisition.py` (14 tests) | {{T19}} |
-| T20 | QC log | every field stored and returned; counts and reject rate; newest-first and filtered queries; unknown field and bad verdict rejected; settings overwrite; operator label; alerts; CSV export equals the table; two connections see the same data | as stated | `tests/test_qclog.py` (11 tests) | {{T20}} |
-| T21 | Dashboard | page renders from a seeded log without exception; KPIs equal the counts; latest verdict and alert shown; saving the settings form writes the settings table; confirming a REVIEW part stores the operator label; missing log gives a hint | as stated | `tests/test_dashboard.py` (5 tests, Streamlit headless harness) | {{T21}} |
-| T22 | Alerts | p-chart limit on hand-worked numbers (0.05, 20 → 0.196); no alert before a full window; spike when 5/20 rejected; only the last window counts; stall boundary; one alert per incident, re-armed after clearing | as stated | `tests/test_alerts.py` (10 tests) | {{T22}} |
-| T23 | Whole system | render a 4-part video from real samples, run the line on CPU: one decision per part in order with the requested votes, each with crop + heatmap + model version, verdicts follow the thresholds, one reject event per REJECT, good parts PASS and defects do not, annotated video has one frame per input frame, settings seeded; folder replay mode | as stated | `tests/test_line.py` (8 tests) | {{T23}} |
+| T19 | Acquisition / trigger | synthetic frames: blob found, entering/leaving flags, small specks ignored, crop centred with the dataset margin and white padding; trigger gives one decision per part with N votes, also when parts are closer than the station width, and decides early when a part leaves; folder source replays each image once in order | as stated | `tests/test_acquisition.py` (14 tests) | Pass |
+| T20 | QC log | every field stored and returned; counts and reject rate; newest-first and filtered queries; unknown field and bad verdict rejected; settings overwrite; operator label; alerts; CSV export equals the table; two connections see the same data | as stated | `tests/test_qclog.py` (11 tests) | Pass |
+| T21 | Dashboard | page renders from a seeded log without exception; KPIs equal the counts; latest verdict and alert shown; saving the settings form writes the settings table; confirming a REVIEW part stores the operator label; missing log gives a hint | as stated | `tests/test_dashboard.py` (5 tests, Streamlit headless harness) | Pass |
+| T22 | Alerts | p-chart limit on hand-worked numbers (0.05, 20 → 0.196); no alert before a full window; spike when 5/20 rejected; only the last window counts; stall boundary; one alert per incident, re-armed after clearing | as stated | `tests/test_alerts.py` (10 tests) | Pass |
+| T23 | Whole system | render a 4-part video from real samples, run the line on CPU: one decision per part in order with the requested votes, each with crop + heatmap + model version, verdicts follow the thresholds, one reject event per REJECT, good parts PASS and defects do not, annotated video has one frame per input frame, settings seeded; folder replay mode | as stated | `tests/test_line.py` (9 tests) | Pass |
 | T24 | AI detection robustness | lighting, rotation, blur, codec | partly covered: the demo feed rotates every part by a random angle, jitters its position and passes through a lossy codec (§9 results); lighting and blur not tested | — | see §9 |
-| T25 | Technique 3 | encoder parameter layout and count equal the official checkpoint (22,056,576), strict load, frozen; feature shapes; predictor shape; top-K score on a hand-worked grid; Otsu and foreground rule; CutPaste changes only the part | as stated | `tests/test_foundad.py` (14 tests) | {{T25}} |
-| T26 | Decision engine | band boundaries (inclusive t_low and t_high), zero-width band, severity bands relative to t_high on two score scales, median vote | as stated | `tests/test_decision.py` (14 tests) | {{T26}} |
+| T25 | Technique 3 | encoder parameter layout and count equal the official checkpoint (22,056,576), strict load, frozen; feature shapes; predictor shape; top-K score on a hand-worked grid, belt patches excluded; patch foreground follows the part; Otsu and foreground rule; CutPaste changes only the part; REJECT-line rule on hand-worked scores (mildest defect above every good, never below the PASS line, fallback without a defect above) | as stated | `tests/test_foundad.py` (19 tests) | Pass |
+| T26 | Decision engine | band boundaries (inclusive t_low and t_high), zero-width band, severity bands relative to t_high on two score scales, median vote | as stated | `tests/test_decision.py` (14 tests) | Pass |
 
-Total: {{N_TESTS}} tests, `python -m unittest discover -s tests -v`, {{TEST_TIME}} on CPU.
+Total: 134 tests, `python -m unittest discover -s tests -v`, 80 s (2-core CPU container; the end-to-end test renders and runs a 4-part video) on CPU.
 
 ## 11. Limitations (facts for the discussion)
 
@@ -163,7 +194,7 @@ Total: {{N_TESTS}} tests, `python -m unittest discover -s tests -v`, {{TEST_TIME
 - The demo camera feed is simulated motion over real photographs: no motion blur, no lighting drift, no belt vibration. A real recording drops in without code changes, but its thresholds should be re-calibrated on line images (the committed thresholds come from the dataset's PNG score distribution; the first end-to-end run showed how far a codec alone can move scores, §7).
 - The model is sensitive to image compression: without the part-only score and the compression augmentation (§7) it rejected every part of the demo feed. A camera that delivers heavily compressed frames (low-bitrate MJPEG) would need its own calibration run.
 - Technique 3's threshold still needs labelled images (split A); a label-free alternative (REJECT at mean + k·sigma of good scores) is available through the dashboard settings but was not evaluated.
-- The CPU time per image of technique 3 (§8) is higher than the other two; on the development laptop it is within the 100 ms target, on the 2-core machine used for the committed run it is not.
+- The CPU time per image of technique 3 (§8) is higher than the other two: 536 ms on the 2-core container used for the committed run, above the 100 ms target. The line still keeps up with the demo feed (one part every ≈ 3.5 s, 5 frames scored each) but not with a faster belt on that machine; a desktop CPU with more cores, a smaller input (`--size 224`) or a GPU are the levers (not measured here).
 - The committed `weights/foundad.pt` was trained on CPU (1000 steps, 1.7 h); a GPU run with more steps may improve it slightly. The script's `--resume` means a resumed run is not bit-identical to an uninterrupted one.
 - The reject signal is software only (event log + beep); a PLC output is the production replacement.
 - The dashboard polls the log every 2 s; a production system would push events.
@@ -173,7 +204,7 @@ Total: {{N_TESTS}} tests, `python -m unittest discover -s tests -v`, {{TEST_TIME
 1. (20 s) Title, team, one sentence: "LineGuard inspects parts on a line and decides PASS / REVIEW / REJECT". Show `architecture.png`.
 2. (30 s) Terminal: `python -m src.run_line --source samples/line_demo.mp4 --reset --display`. Show the window: bottles moving, station box turning yellow while collecting, green / red when decided, the heatmap inset, counters, a REJECT SIGNAL line and beep in the terminal.
 3. (40 s) Second terminal: `streamlit run src/dashboard.py`. Browser: KPIs updating, latest part with heatmap, control chart, alerts (none or the spike if it fires), recent table.
-4. (30 s) Dashboard: `broken_small_014` is in the review queue (score 3.14, between t_low 2.36 and t_high 4.28) → click "Confirm defect". Then settings: lower t_low (e.g. 1.8) → the next good parts near it show REVIEW. Explain: operator control without retraining.
+4. (30 s) Dashboard settings: raise t_high to 7 (t_low stays 3.14) and save → the next borderline defects (`contamination_002` 4.1, `broken_small_001` 6.1, `broken_small_011` 6.6, `contamination_001` 6.7 in the feed) show REVIEW instead of REJECT and appear in the review queue → click "Confirm defect" on one. Explain: operator control without retraining; the calibration band itself is narrow (3.14–3.26) because the retrained model separates the calibration goods from the defects cleanly.
 5. (30 s) Evaluation: open `results/SUMMARY.md`, point at the three-model table and `roc.png`; one sentence on 4 training images.
 6. (20 s) `python -m src.demo --model foundad --input samples/contamination_005.png` → open the figure: input | heatmap | verdict.
 7. (20 s) Tests: `python -m unittest discover -s tests` scrolling, "OK".
@@ -183,7 +214,7 @@ Total: {{N_TESTS}} tests, `python -m unittest discover -s tests -v`, {{TEST_TIME
 
 | Topic | Plan |
 |---|---|
-| Hardware | An industrial PC with a CPU is enough: technique 3 runs at {{FOUNDAD_MS}} ms per image on the committed-run CPU and faster on the development laptop; a GPU is only needed for training. Backlit belt, fixed camera, fixed ROI. |
+| Hardware | An industrial PC with a CPU is enough for the demo belt speed: technique 3 runs at 536 ms per image on the 2-core container used for the committed run (5 frames per part, one part every ≈ 3.5 s); a faster belt needs a stronger CPU or a GPU, which is otherwise only needed for training. Backlit belt, fixed camera, fixed ROI. |
 | Software | One Python 3.12/3.13 environment from `requirements.txt` (pinned), the DINOv2 file fetched once; everything else is in the repository. Runner and dashboard are two processes sharing the SQLite file; the dashboard can run on another machine that mounts the file. |
 | Commissioning a product | 1) photograph 4–8 good parts in the station; 2) `train_foundad.py` on them (minutes on GPU); 3) run the line on a batch of known-good parts and set t_low / t_high in the dashboard from their score distribution; 4) confirm with a batch containing known defects. |
 | Monitoring | KPIs and the p-chart in the dashboard; alerts for rate spikes and stalls; every decision has its crop and heatmap for audit. |
