@@ -22,7 +22,7 @@ Reproducibility still beats features.
 
 - Acquisition: video file / webcam / folder through one interface; station trigger (dark blob fully
   inside the ROI, part-centred crop), N frame votes (median). `src/acquisition.py`
-- Demo camera feed: `samples/line_demo.mp4`, rendered from the 20 real split-B sample photos moving on
+- Demo camera feed: `samples/line_demo.mp4`, rendered from the 21 real split-B sample photos moving on
   a simulated backlit belt (`src/make_line_video.py`). A real recording drops in with no code change.
 - Decision engine: PASS / REVIEW / REJECT (t_low, t_high), severity bands relative to t_high. `src/decision.py`
 - QC log: SQLite (inspections, settings, alerts) + CSV export. `src/qclog.py`
@@ -32,8 +32,9 @@ Reproducibility still beats features.
 - Line runner: `python -m src.run_line --source ...` wires everything, writes `results/line/`. `src/run_line.py`
 - Technique 3: frozen DINOv2 ViT-S/14 (`src/dino.py`, own minimal implementation loading the official
   weights, `src/download_backbone.py`) + FoundAD predictor trained on 4 good images with CutPaste
-  (`src/foundad.py`, `src/train_foundad.py`). Thresholds: t_high best-F1 on split A, t_low 95th
-  percentile of unseen good images. Checkpoint stores only the predictor.
+  (`src/foundad.py`, `src/train_foundad.py`). Thresholds: t_low (PASS line, the checkpoint's threshold)
+  best-F1 on split A; t_high (REJECT line) above every unseen good image (midpoint to the next split-A
+  defect). `--calibrate-only` recomputes both without retraining. Checkpoint stores only the predictor.
 - Evaluation extended to three models; `results/SUMMARY.md` has three columns.
 
 ## Data: MVTec AD, `bottle` category only
@@ -91,10 +92,13 @@ Both models must be scored on identical images or the comparison is invalid.
 - Predictor: Linear -> 6 transformer blocks (width 384, 12 heads, input embedding added back after each
   block, no positional embedding) -> LayerNorm -> Linear. ~11 M parameters. Only this is trained.
 - Training: 4 seeded good images from `train`; each step augments them (flip/rot90 p=0.3, colour/grey/blur
-  p=0.3), makes a CutPaste copy (blob or scar pasted on the Otsu foreground) for half the contexts, and
-  minimises MSE(predictor(context features), clean features). AdamW 1e-3, wd 1e-4, batch 4, 1000 steps.
-- Score = mean of the top-10 patch errors; heatmap = the 32x32 error grid (display scaled from the
-  median normal patch error "map_floor" to t_high).
+  p=0.3), makes a CutPaste copy (blob or scar pasted on the Otsu foreground) for half the contexts, puts
+  half the pairs through a JPEG round trip (q 40-95, target and context alike, so codec artefacts count as
+  normal), and minimises MSE(predictor(context features), clean features). AdamW 1e-3, wd 1e-4, batch 4,
+  1000 steps.
+- Score = mean of the top-10 patch errors over the part's patches only (Otsu foreground on the 32x32 grid;
+  the belt is not inspected); heatmap = the 32x32 error grid, belt patches shown as 0 (display scaled from
+  the median normal patch error "map_floor" to t_high).
 - Rationale and reference: Zhai et al. 2025 (arXiv:2510.01934), github.com/ymxlzgy/FoundAD (MIT).
   Re-implemented, not vendored: their environment pins Python 3.8 / torch 2.2 and 20 extra packages.
 - DINOv3 is not used: its weights are gated behind Meta's licence, so a marker could not reproduce.
@@ -188,7 +192,7 @@ as `- YYYY-MM-DD — <prompt>`. Don't paraphrase it.
 
 1. Fresh venv → `pip install -r requirements.txt` → `python -m src.download_backbone`.
 2. `python -m src.demo --model <ae|cnn|foundad> --input samples/` all run clean on CPU.
-3. `python -m src.run_line --source samples/line_demo.mp4 --reset` decides all 20 parts; the dashboard opens on the log.
+3. `python -m src.run_line --source samples/line_demo.mp4 --reset` decides all 21 parts; the dashboard opens on the log.
 4. `results/SUMMARY.md` and the plots exist and match `metrics.csv` (three models).
 5. `python -m unittest discover -s tests -v` passes (including the end-to-end test).
 6. README steps work exactly as written, on Windows too (the final-system packages were pinned on Linux).
@@ -207,6 +211,23 @@ as `- YYYY-MM-DD — <prompt>`. Don't paraphrase it.
 - 2026-11-03 — Technique 3 added as primary detector (FoundAD-style on frozen DINOv2 ViT-S/14, re-implemented
   in-repo; DINOv2 over DINOv3 because DINOv3 weights are gated). Camera stage = recorded conveyor video
   rendered from real split-B photos (no live camera needed for the demo; webcam supported). Station trigger
-  tracks decided parts by x so parts closer than the station width are separated. REVIEW band: t_low = 95th
-  percentile of unseen good-image scores. Severity relative to t_high (5% / 15%). Alerts: p-chart 3-sigma,
+  tracks decided parts by x so parts closer than the station width are separated. Alerts: p-chart 3-sigma,
   baseline 5%, window 20; stall 10 s. Dashboard settings override the checkpoint thresholds per part.
+- 2026-11-03 (after the full training run) — REVIEW band redefined. First rule (t_low = 95th percentile of
+  unseen good scores, capped at the best-F1 threshold) collapsed to an empty band: the 95th percentile (2.51)
+  sits above the best-F1 cut (2.36) because that cut lies inside the tail of the good scores. Now t_low = the
+  best-F1 threshold (PASS line; evaluation metrics unchanged) and t_high = midpoint between the highest
+  unseen good score (3.22) and the lowest split-A defect above it (5.34) = 4.28, so no calibration good
+  image is rejected outright; 3 of 31 would be reviewed. Severity defaults changed from 5% / 15% to
+  50% / 150% above t_high (the old bands put every bottle defect in "severe"). `samples/` gained
+  `broken_small_014.png`, the one split-B defect inside the band, so the demo exercises REVIEW.
+- 2026-11-03 (first end-to-end run) — the run-1 model rejected all 21 parts of the demo feed: every good
+  bottle scored 5.6-6.7 as a video crop against 1.1-1.8 as a PNG. Cause isolated by experiment: the video
+  codec (mp4v; JPEG q75 alone lifts a good bottle from 1.7 to 4.1, a lossless FFV1 clip reproduces the PNG
+  score exactly; resize and rotation change nothing). The hot patches sat in the white belt around the
+  bottle. Two fixes, both kept: (1) only the part's patches can score (Otsu foreground on the patch grid),
+  which alone brings the run-1 model's video crops to 1.6-2.3 good / 4.8-13 defect; (2) training pairs go
+  through a JPEG round trip half the time, so the predictor treats compressed normal as normal (a 60-step
+  warm start already halved the good-crop scores). Lossless video was rejected: FFV1 is ~230 KB/frame
+  (400 MB for the demo feed) and OpenCV's writer ignores quality options for mp4v. The model was retrained
+  from scratch with (2); run-1 log kept as `results/logs/train_foundad_run1_no_compression_aug.log`.

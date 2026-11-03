@@ -68,8 +68,8 @@ On Linux install the smaller CPU build of PyTorch first:
 `download_backbone` fetches the DINOv2 encoder weights once (88 MB, SHA-256 checked, Apache 2.0).
 After that nothing needs the internet.
 
-**Run the line on the recorded camera feed** (20 real held-out bottles moving along a belt,
-`samples/line_demo.mp4`, 69 s):
+**Run the line on the recorded camera feed** (21 real held-out bottles moving along a belt,
+`samples/line_demo.mp4`, 72 s):
 
 ```
 .venv\Scripts\python -m src.run_line --source samples/line_demo.mp4 --reset
@@ -138,7 +138,7 @@ Run from the project folder with the same Python (written as `python` below).
 | Train technique 2 | `python -m src.train_cnn` | ResNet-18 → `weights/cnn.pt` (downloads ImageNet weights once) | GPU ~2.5 min, CPU ~7 min |
 | Train technique 3 | `python -m src.train_foundad` | predictor on 4 good images with CutPaste, 1000 steps → `weights/foundad.pt` (predictor + both thresholds) | GPU ~3 min, CPU ~1.7 h (`--resume` continues an interrupted run) |
 | Evaluate | `python -m src.evaluate` | scores split B on CPU with all three → `results/` (metrics, plots, heatmaps, `SUMMARY.md`) | ~2 min |
-| Demo feed | `python -m src.make_line_video` | renders `samples/line_demo.mp4` from the 20 sample images (deterministic, seed 42) | ~15 s |
+| Demo feed | `python -m src.make_line_video` | renders `samples/line_demo.mp4` from the 21 sample images (deterministic, seed 42) | ~15 s |
 | Tests | `python -m unittest discover -s tests -v` | unit tests for every subsystem plus an end-to-end run on a short rendered video | ~3 min |
 
 Notes:
@@ -175,7 +175,7 @@ and for calibrating thresholds, while split B stays untouched for evaluation:
 | split A | 41 (10 good, 31 defect) | CNN training; autoencoder and FoundAD REJECT threshold only |
 | split B | 42 (10 good, 32 defect) | evaluation only, all three models |
 
-The 20 images in `samples/` (and therefore the demo feed) are split-B images: no model has seen them.
+The 21 images in `samples/` (and therefore the demo feed) are split-B images: no model has seen them.
 
 ## 4. How a part is decided
 
@@ -186,10 +186,14 @@ The 20 images in `samples/` (and therefore the demo feed) are split-B images: no
    blurred frame cannot decide it. Decided parts are followed until they leave, so parts closer
    together than the station is wide are still separated.
 3. **Decision.** `score < t_low` PASS; `t_low ≤ score < t_high` REVIEW (a person checks it);
-   `score ≥ t_high` REJECT. `t_high` is the model's calibrated threshold (best F1 on split A, as in
-   Assignment 1); `t_low` is the 95th percentile of the scores of good images the model never
-   trained on. REJECT severity is the score's excess over `t_high`: minor < 5 %, moderate < 15 %,
-   severe beyond (operator-adjustable, scale-free so it works for any model).
+   `score ≥ t_high` REJECT. `t_low` is the model's calibrated threshold (best F1 on split A, as in
+   Assignment 1), so the evaluation's numbers still hold: a part at or above it does not pass.
+   `t_high` is set above every good image the model was calibrated on (halfway between the highest
+   of them and the lowest split-A defect above it), so a good part is never rejected outright by the
+   calibration rule; the autoencoder and CNN have no `t_high` of their own (empty band until the
+   operator sets one). FoundAD scores only the patches on the part (Otsu foreground): the belt around
+   it is not inspected, so codec noise or lighting on the belt cannot reject a part. REJECT severity is the score's excess over `t_high`: minor < 50 %,
+   moderate < 150 %, severe beyond (operator-adjustable, scale-free so it works for any model).
 4. **Record and act.** Every decision goes into the QC log with its score, both thresholds, the model
    version, the crop and the heatmap; a REJECT also fires the reject signal.
 5. **Watch the process.** The alerts module runs a p-chart on the reject rate (baseline 5 %, window 20
@@ -252,7 +256,7 @@ docs/                    report inputs, code walkthrough, architecture diagram, 
 [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) (non-commercial use).
 Official source: https://www.mvtec.com/company/research/datasets/mvtec-ad. The download script uses the
 Hugging Face mirror `foersben/mvtec-ad` pinned to commit `c75b39616f84db43677bcc8228caaafaf5096d7f`.
-The dataset itself is not in this repository; the 20 sample images and the demo video rendered from
+The dataset itself is not in this repository; the 21 sample images and the demo video rendered from
 them are (see `samples/ATTRIBUTION.md`).
 
 **Models and methods.**

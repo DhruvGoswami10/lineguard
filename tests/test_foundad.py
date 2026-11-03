@@ -12,7 +12,7 @@ from PIL import Image
 from src.dino import PATCH, VARIANTS, DinoVisionTransformer, load_dino
 from src.download_backbone import BACKBONES, backbone_path
 from src.foundad import (CutPaste, FoundAD, Predictor, foreground_mask, foundad_transform, otsu_threshold,
-                         score_from_errors, upsample_map)
+                         patch_foreground, score_from_errors, upsample_map)
 
 REPO = Path(__file__).resolve().parents[1]
 BACKBONE = REPO / backbone_path("vits14")
@@ -75,6 +75,21 @@ class TestPredictorAndScore(unittest.TestCase):
         self.assertEqual(grid.shape, (2, 2))
         self.assertEqual(grid[1, 1], 9.0)
         self.assertAlmostEqual(score_from_errors(errors, top_k=10)[0], 4.25)  # K capped at the grid size
+
+    def test_only_the_part_can_score(self):
+        errors = torch.tensor([[1.0, 5.0, 2.0, 9.0]])
+        on_part = np.array([[True, True], [True, False]])  # the 9 is on the belt
+        score, grid = score_from_errors(errors, top_k=2, foreground=on_part)
+        self.assertAlmostEqual(score, 3.5)                 # (5 + 2) / 2
+        self.assertEqual(grid[1, 1], 0.0)                  # the map shows the belt as clean
+        empty = np.zeros((2, 2), bool)                     # no part found: every patch counts
+        self.assertAlmostEqual(score_from_errors(errors, top_k=2, foreground=empty)[0], 7.0)
+
+    def test_patch_foreground_follows_the_disc(self):
+        grid = patch_foreground(bottle_like(), side=8)     # 128 px image -> 8x8 patches of 16 px
+        self.assertEqual(grid.shape, (8, 8))
+        self.assertTrue(grid[4, 4] and not grid[0, 0])
+        self.assertTrue(10 < grid.sum() < 64)
 
     def test_upsample_keeps_the_hot_spot(self):
         grid = np.zeros((4, 4), np.float32)

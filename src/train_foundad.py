@@ -9,7 +9,9 @@
 2. Each step: lightly augment the images, make a CutPaste copy of each one with a
    synthetic defect pasted on the part, and train the predictor so that the features
    of the pasted image (and, half the time, of the clean image itself) predict the
-   features of the clean image. MSE loss, AdamW, as in FoundAD.
+   features of the clean image. MSE loss, AdamW, as in FoundAD. Half the pairs also go
+   through a JPEG round trip, so camera / video codec artefacts count as normal
+   (src/foundad.py, jpeg_round_trip: why this matters).
 3. Score split A on the CPU and choose the threshold with the best F1, exactly as for
    the autoencoder (split A is the detector's only use of labelled images). This is the
    PASS line (t_low): the evaluation's binary metrics are computed at this cut.
@@ -43,8 +45,8 @@ from PIL import Image
 from src.common import SEED, get_device, set_seed
 from src.data import DEFAULT_ROOT, DEFAULT_SPLIT, check_layout, load_image, load_split
 from src.download_backbone import BACKBONES, backbone_path
-from src.foundad import (FOUNDAD_SIZE, N_FROM_END, TOP_K, CutPaste, FoundAD, Predictor,
-                         foundad_inspect, foundad_transform, train_augment)
+from src.foundad import (COMPRESS_P, COMPRESS_QUALITY, FOUNDAD_SIZE, N_FROM_END, TOP_K, CutPaste, FoundAD,
+                         Predictor, foundad_inspect, foundad_transform, jpeg_round_trip, train_augment)
 from src.inference import best_f1_threshold, save_checkpoint
 from src.dino import load_dino
 from src.visualize import plot_curves
@@ -94,9 +96,14 @@ def choose_shots(items: list[dict], shots: int, seed: int) -> list[dict]:
 
 def make_pair(image: Image.Image, augment, cutpaste: CutPaste, rng: random.Random, transform):
     """(target tensor, context tensor): the same augmented image, the context half the
-    time with a synthetic defect pasted on. The target is always the clean one."""
+    time with a synthetic defect pasted on. The target is always the clean one. Half the
+    pairs then go through a JPEG round trip at one random quality (both images alike), so
+    the camera's and the video file's codec artefacts count as normal."""
     clean = np.asarray(augment(image))
     context = cutpaste(clean) if rng.random() < 0.5 else clean
+    if rng.random() < COMPRESS_P:
+        quality = rng.randint(*COMPRESS_QUALITY)
+        clean, context = jpeg_round_trip(clean, quality), jpeg_round_trip(context, quality)
     return transform(Image.fromarray(clean)), transform(Image.fromarray(context))
 
 
@@ -290,7 +297,8 @@ def main() -> None:
         "loss": "MSE between predicted and clean patch features", "optimizer": "AdamW",
         "lr": args.lr, "weight_decay": args.weight_decay, "batch_size": args.batch_size,
         "steps": args.steps, "final_loss": result["loss"][-1],
-        "augmentation": "flip/rot90 (p=0.3), colour/grey/blur (p=0.3); CutPaste blob or scar on 50% of contexts",
+        "augmentation": "flip/rot90 (p=0.3), colour/grey/blur (p=0.3); CutPaste blob or scar on 50% of contexts; "
+                        f"JPEG round trip q{COMPRESS_QUALITY[0]}-{COMPRESS_QUALITY[1]} on {COMPRESS_P:.0%} of pairs",
         "n_train": len(images), "train_images": [i["path"] for i in shots],
         "train_source": args.good_dir or f"{args.data_root} ({args.split})",
         "n_defect_images_used": 0,
