@@ -213,3 +213,4 @@ I toold that I will add cam between step 1 and 2 fro live monitoring and make fe
 
 - 2026-11-03 — (answer to the camera-stage question) `this is just a POC and has to work for this demo. the idea is that I want to use a recorded video and not live shit. so what can we do here as quick win that is not AI generated video and built on real stuff??`
 - 2026-11-03 — `can you push the changes? and please before you continue please explain what you aid and why you did`
+- 2026-11-03 — `done can you test now? the GitHub push?`
