@@ -50,7 +50,8 @@ def overlay(image: Image.Image, heatmap: np.ndarray, vmax: float, vmin: float = 
 
 def save_verdict_figure(image: Image.Image, result: dict, kind: str, out_path, title: str,
                         truth: str | None = None) -> None:
-    """Three panels: input image | heatmap overlay | verdict with score and threshold.
+    """Three panels: input image | heatmap overlay | verdict with score and threshold
+    (on the line, with both the REVIEW and the REJECT line when they differ).
 
     Autoencoder and FoundAD heatmaps are scaled so red means "error at or above the
     reject threshold" (FoundAD's score is the mean of its 10 hottest patches, so a
@@ -76,7 +77,11 @@ def save_verdict_figure(image: Image.Image, result: dict, kind: str, out_path, t
     axes[2].text(0.5, 0.7, result["verdict"], color=colour, fontsize=30, weight="bold",
                  ha="center", va="center")
     fmt = ".4f" if kind == "cnn" else ".4g"  # CNN probabilities: fixed decimals, so 0.9999 never shows as "1"
-    lines = [f"score     {result['score']:{fmt}}", f"threshold {result['threshold']:{fmt}}"]
+    lines = [f"score     {result['score']:{fmt}}"]
+    if result.get("t_low", result["threshold"]) != result["threshold"]:   # the line's two lines
+        lines += [f"review >= {result['t_low']:{fmt}}", f"reject >= {result['threshold']:{fmt}}"]
+    else:
+        lines.append(f"threshold {result['threshold']:{fmt}}")
     if truth:
         lines.append(f"truth     {truth}")
     axes[2].text(0.5, 0.32, "\n".join(lines), family="monospace", fontsize=10, ha="center", va="center")

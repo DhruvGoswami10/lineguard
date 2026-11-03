@@ -342,9 +342,9 @@ def write_summary(path: Path, split: dict, results: dict, configs: dict) -> None
         "| Part | Images | Used for |",
         "|---|---|---|",
         f"| train | {len(split['train'])} good | AE training; CNN training; FoundAD's few-shot images are drawn from here |",
-        f"| val | {len(split['val'])} good | AE early stopping; CNN monitoring; FoundAD REVIEW threshold (with split-A good) |",
+        f"| val | {len(split['val'])} good | AE early stopping; CNN monitoring; FoundAD REJECT line (with split-A good: no unseen good image may sit above it) |",
         f"| split A | {len(split['split_a'])} ({sum(i['label'] == 0 for i in split['split_a'])} good, "
-        f"{sum(i['label'] for i in split['split_a'])} defect) | CNN training; AE and FoundAD REJECT threshold only |",
+        f"{sum(i['label'] for i in split['split_a'])} defect) | CNN training; AE and FoundAD thresholds only |",
         f"| split B | {n_b} ({n_b_good} good, {n_b - n_b_good} defect) | evaluation of every model, nothing else |",
         "",
         "Dataset: MVTec AD, category `bottle` (CC BY-NC-SA 4.0). Split: `splits/bottle_split.json`, seed "
