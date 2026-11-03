@@ -30,6 +30,7 @@ from matplotlib.ticker import PercentFormatter  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # `streamlit run src/dashboard.py` from the repo root
 from src.alerts import control_limit  # noqa: E402
+from src.decision import DEFAULT_SEVERITY_PCT  # noqa: E402
 from src.qclog import DEFAULT_DB, QCLog  # noqa: E402
 
 REFRESH_SECONDS = 2
@@ -167,8 +168,8 @@ def page(db_path: str) -> None:
             c = st.columns(4)
             t_low = c[0].number_input("REVIEW from (t_low)", value=float(settings.get("t_low", 0.0)), format="%.5f")
             t_high = c[1].number_input("REJECT from (t_high)", value=float(settings.get("t_high", 0.0)), format="%.5f")
-            moderate = c[2].number_input("moderate from (% above t_high)", value=float(settings.get("moderate_pct", 5.0)))
-            severe = c[3].number_input("severe from (% above t_high)", value=float(settings.get("severe_pct", 15.0)))
+            moderate = c[2].number_input("moderate from (% above t_high)", value=float(settings.get("moderate_pct", DEFAULT_SEVERITY_PCT[0])))
+            severe = c[3].number_input("severe from (% above t_high)", value=float(settings.get("severe_pct", DEFAULT_SEVERITY_PCT[1])))
             c = st.columns(4)
             baseline = c[0].number_input("baseline reject rate", value=float(settings.get("baseline_rate", 0.05)),
                                          min_value=0.0, max_value=1.0, format="%.3f")

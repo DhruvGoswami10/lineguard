@@ -10,17 +10,23 @@
    synthetic defect pasted on the part, and train the predictor so that the features
    of the pasted image (and, half the time, of the clean image itself) predict the
    features of the clean image. MSE loss, AdamW, as in FoundAD.
-3. Score split A on the CPU and choose the REJECT threshold with the best F1, exactly
-   as for the autoencoder (split A is the detector's only use of labelled images).
-4. Set the lower edge of the REVIEW band from good images the model never trained on
-   (validation + split-A good): the 95th percentile of their scores. Parts between the
-   two thresholds go to a person instead of being passed or scrapped (src/decision.py).
+3. Score split A on the CPU and choose the threshold with the best F1, exactly as for
+   the autoencoder (split A is the detector's only use of labelled images). This is the
+   PASS line (t_low): the evaluation's binary metrics are computed at this cut.
+4. Set the REJECT line (t_high) from good images the model never trained on (validation
+   + split-A good): halfway between the highest of their scores and the lowest split-A
+   defect score above it, so no calibration good image would be rejected outright.
+   Parts between the two lines go to REVIEW: a person decides instead of the part being
+   passed or scrapped (src/decision.py).
 5. Save the predictor + both thresholds to weights/foundad.pt and the loss curve to results/.
+
+--calibrate-only skips the training and recomputes the thresholds for the predictor
+already in --out (after adding good images, or after changing the rules above).
 
 Commissioning a new product (--good-dir): the same training on photographs of your own
 good parts, with no dataset and no labels. --shots of them train the predictor; the rest
-calibrate the thresholds from good scores only: REJECT at mean + 3 sigma, REVIEW at mean
-+ 2 sigma (refine both in the dashboard once some parts have run). Then run the line
+calibrate the thresholds from good scores only: REVIEW from mean + 2 sigma, REJECT from
+mean + 3 sigma (refine both in the dashboard once some parts have run). Then run the line
 with --weights <that folder>; the DINOv2 file is still found in weights/.
 """
 import argparse
@@ -42,8 +48,6 @@ from src.foundad import (FOUNDAD_SIZE, N_FROM_END, TOP_K, CutPaste, FoundAD, Pre
 from src.inference import best_f1_threshold, save_checkpoint
 from src.dino import load_dino
 from src.visualize import plot_curves
-
-REVIEW_PERCENTILE = 95  # good parts above this percentile of good scores go to REVIEW
 
 
 def parse_args() -> argparse.Namespace:
@@ -75,6 +79,8 @@ def parse_args() -> argparse.Namespace:
                    help="write a progress checkpoint (<out>.progress) every N steps")
     p.add_argument("--resume", action="store_true",
                    help="continue from <out>.progress if it exists (after an interrupted run)")
+    p.add_argument("--calibrate-only", action="store_true",
+                   help="skip training: recompute the thresholds of the predictor already in --out")
     return p.parse_args()
 
 
@@ -151,26 +157,42 @@ def scores_for(model, root, items, size, device) -> tuple[np.ndarray, list[np.nd
     return np.array([s for s, _ in results]), [m for _, m in results]
 
 
+def reject_line(good_scores: np.ndarray, defect_scores: np.ndarray, threshold: float) -> float:
+    """The REJECT line: halfway between the highest good score and the lowest defect score
+    above it (the midpoint rule of best_f1_threshold), so no calibration good image is
+    rejected outright, and never below the PASS line. With no defect above the highest
+    good image, 10% above it."""
+    top_good = float(good_scores.max())
+    above = defect_scores[defect_scores > top_good]
+    t_high = (top_good + float(above.min())) / 2 if len(above) else top_good * 1.1
+    return max(t_high, threshold)
+
+
 def calibrate_on_split(model, args, split) -> dict:
-    """Dataset mode: REJECT threshold by best F1 on split A; REVIEW from unseen good images."""
+    """Dataset mode: PASS line (the checkpoint's threshold) by best F1 on split A; REJECT
+    line above every good image the model never trained on (validation + split-A good)."""
     cpu = torch.device("cpu")
     a_scores, _ = scores_for(model, args.data_root, split["split_a"], args.size, cpu)
     a_labels = np.array([i["label"] for i in split["split_a"]])
     threshold = best_f1_threshold(a_scores, a_labels)
-    reject = a_scores >= threshold
-    tp, fp, fn = int((reject & (a_labels == 1)).sum()), int((reject & (a_labels == 0)).sum()), \
-        int((~reject & (a_labels == 1)).sum())
+    flagged = a_scores >= threshold
+    tp, fp, fn = int((flagged & (a_labels == 1)).sum()), int((flagged & (a_labels == 0)).sum()), \
+        int((~flagged & (a_labels == 1)).sum())
     unseen_good = split["val"] + [i for i in split["split_a"] if i["label"] == 0]
     good_scores, good_maps = scores_for(model, args.data_root, unseen_good, args.size, cpu)
-    t_low = min(float(np.percentile(good_scores, REVIEW_PERCENTILE)), threshold)
-    print(f"REJECT threshold (best F1 on split A): {threshold:.5f} (split-A F1 {2 * tp / (2 * tp + fp + fn):.3f}); "
-          f"REVIEW from {t_low:.5f} ({REVIEW_PERCENTILE}th percentile of {len(good_scores)} unseen good images)")
-    return {"threshold": threshold, "t_low": t_low,
+    t_high = reject_line(good_scores, a_scores[a_labels == 1], threshold)
+    in_band = int(((good_scores >= threshold) & (good_scores < t_high)).sum())
+    print(f"PASS below {threshold:.5f} (best F1 on split A: {2 * tp / (2 * tp + fp + fn):.3f}); "
+          f"REJECT from {t_high:.5f} (above all {len(good_scores)} unseen good images; "
+          f"{in_band} of them would go to REVIEW)")
+    return {"threshold": threshold, "t_high": t_high,
             "map_floor": float(np.median(np.stack(good_maps))),  # typical normal patch error: the heatmap's "blue"
-            "threshold_rule": "best F1 on split A (midpoint between neighbouring scores)",
+            "threshold_rule": "best F1 on split A (midpoint between neighbouring scores); the PASS line",
             "split_a_f1": 2 * tp / (2 * tp + fp + fn),
-            "t_low_rule": f"{REVIEW_PERCENTILE}th percentile of {len(good_scores)} unseen good images "
-                          "(val + split-A good), capped at the REJECT threshold"}
+            "t_high_rule": f"midpoint between the highest of {len(good_scores)} unseen good images "
+                           "(val + split-A good) and the lowest split-A defect above it; the REJECT line",
+            "n_unseen_good": len(good_scores), "unseen_good_in_review_band": in_band,
+            "unseen_good_max": float(good_scores.max())}
 
 
 def calibrate_on_good_only(model, args, held_out: list[Path], trained: list[Path]) -> dict:
@@ -180,34 +202,51 @@ def calibrate_on_good_only(model, args, held_out: list[Path], trained: list[Path
     items = [{"path": p.name} for p in (held_out or trained)]
     scores, maps = scores_for(model, held_out[0].parent if held_out else trained[0].parent, items, args.size, cpu)
     mean, std = float(scores.mean()), float(scores.std()) if len(scores) > 1 else float(scores.mean()) * 0.05
-    threshold, t_low = mean + 3 * std, mean + 2 * std
+    threshold, t_high = mean + 2 * std, mean + 3 * std
     source = f"{len(scores)} held-out good photos" if held_out else f"the {len(scores)} training photos (no held-out ones: optimistic)"
-    print(f"Label-free calibration on {source}: REJECT from {threshold:.5f} (mean + 3 sigma), "
-          f"REVIEW from {t_low:.5f} (mean + 2 sigma). Refine in the dashboard once parts have run.")
-    return {"threshold": threshold, "t_low": t_low, "map_floor": float(np.median(np.stack(maps))),
-            "threshold_rule": f"mean + 3 sigma of good scores ({source})", "split_a_f1": None,
-            "t_low_rule": f"mean + 2 sigma of good scores ({source})"}
+    print(f"Label-free calibration on {source}: REVIEW from {threshold:.5f} (mean + 2 sigma), "
+          f"REJECT from {t_high:.5f} (mean + 3 sigma). Refine in the dashboard once parts have run.")
+    return {"threshold": threshold, "t_high": t_high, "map_floor": float(np.median(np.stack(maps))),
+            "threshold_rule": f"mean + 2 sigma of good scores ({source}); the PASS line", "split_a_f1": None,
+            "t_high_rule": f"mean + 3 sigma of good scores ({source}); the REJECT line",
+            "n_unseen_good": len(scores)}
+
+
+CALIBRATION_KEYS = ("t_low", "t_low_rule", "t_high", "t_high_rule", "threshold_rule", "split_a_f1", "map_floor", "map_floor_rule",
+                    "n_unseen_good", "unseen_good_in_review_band", "unseen_good_max", "calibrated_on")
 
 
 def main() -> None:
     args = parse_args()
     set_seed(args.seed)
     device = get_device(args.device)
+    previous = None
+    if args.calibrate_only:  # the trained predictor and its settings come from the checkpoint
+        previous = torch.load(args.out, map_location="cpu", weights_only=True)
+        if previous.get("kind") != "foundad":
+            raise SystemExit(f"{args.out} is not a FoundAD checkpoint")
+        old = previous["config"]
+        args.backbone, args.size, args.n_from_end, args.top_k = \
+            old["backbone"], old["input_size"], old["n_from_end"], old["top_k"]
+        args.predictor_width, args.predictor_depth, args.predictor_heads = \
+            old["predictor_width"], old["predictor_depth"], old["predictor_heads"]
     if args.size % 14:
         raise SystemExit("--size must be a multiple of 14 (the DINOv2 patch size).")
     if args.good_dir:
         photos = sorted(p for p in Path(args.good_dir).iterdir() if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".bmp"))
         if len(photos) < 2:
             raise SystemExit(f"--good-dir needs at least 2 photos of good parts (found {len(photos)} in {args.good_dir})")
-        shots = choose_shots([{"path": p.name} for p in photos], args.shots, args.seed)
-        shot_paths = [Path(args.good_dir) / i["path"] for i in shots]
-        held_out = [p for p in photos if p not in shot_paths]
         image_root, split = Path(args.good_dir), None
+        shots = ([{"path": p} for p in previous["config"]["train_images"]] if previous
+                 else choose_shots([{"path": p.name} for p in photos], args.shots, args.seed))
+        shot_paths = [image_root / i["path"] for i in shots]
+        held_out = [p for p in photos if p not in shot_paths]
     else:
         check_layout(args.data_root)
         split = load_split(args.split)
-        shots = choose_shots(split["train"], args.shots, args.seed)
         image_root = Path(args.data_root)
+        shots = ([{"path": p} for p in previous["config"]["train_images"]] if previous
+                 else choose_shots(split["train"], args.shots, args.seed))
 
     encoder = load_dino(backbone_path(args.backbone, args.weights_dir), args.backbone, device)
     predictor = Predictor(encoder.dim, args.predictor_width, args.predictor_depth, args.predictor_heads)
@@ -216,9 +255,15 @@ def main() -> None:
     # Resize once; the augmentations work at the model's input size.
     images = [load_image(image_root / i["path"]).resize((args.size, args.size), Image.BILINEAR) for i in shots]
     n_params = sum(p.numel() for p in predictor.parameters())
-    print(f"Training FoundAD predictor ({n_params:,} parameters) on {len(images)} good images, "
-          f"DINOv2 {args.backbone} frozen, {args.size} px, {args.steps} steps ({device}).")
-    result = train(model, images, device, args)
+    if previous:
+        model.predictor.load_state_dict(previous["state_dict"])
+        model.predictor.eval()
+        print(f"Recalibrating the predictor in {args.out} ({n_params:,} parameters, "
+              f"trained on {len(images)} good images); no training.")
+    else:
+        print(f"Training FoundAD predictor ({n_params:,} parameters) on {len(images)} good images, "
+              f"DINOv2 {args.backbone} frozen, {args.size} px, {args.steps} steps ({device}).")
+        result = train(model, images, device, args)
 
     # Calibrate on the CPU: evaluation and the demo run there, so the thresholds are
     # chosen from exactly the scores they will compute.
@@ -226,6 +271,15 @@ def main() -> None:
     calibration = (calibrate_on_split(model, args, split) if split
                    else calibrate_on_good_only(model, args, held_out, shot_paths))
     threshold = calibration.pop("threshold")
+    calibration["map_floor_rule"] = "median patch error over the calibration good images (heatmap scale)"
+    calibration["calibrated_on"] = "cpu"
+
+    if previous:  # keep the training record, replace the calibration
+        config = {k: v for k, v in previous["config"].items() if k not in CALIBRATION_KEYS}
+        config.update(calibration)
+        save_checkpoint(args.out, model.predictor, "foundad", threshold, config)
+        print(f"Saved {args.out} (thresholds updated, weights unchanged)")
+        return
 
     config = {
         "technique": "FoundAD-style few-shot detector (frozen DINOv2 + trained predictor)",
@@ -241,8 +295,7 @@ def main() -> None:
         "train_source": args.good_dir or f"{args.data_root} ({args.split})",
         "n_defect_images_used": 0,
         **calibration,
-        "map_floor_rule": "median patch error over the calibration good images (heatmap scale)",
-        "seed": args.seed, "trained_on": str(device), "calibrated_on": "cpu", "torch": torch.__version__,
+        "seed": args.seed, "trained_on": str(device), "torch": torch.__version__,
     }
     save_checkpoint(args.out, model.predictor, "foundad", threshold, config)
     plot_curves({"train": result["loss"]}, Path(args.results) / "foundad_training_curve.png",
