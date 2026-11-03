@@ -5,7 +5,7 @@
 
 Why a composited video: the proof of concept needs a camera feed that can be replayed
 on any machine, that contains real parts with real defects, and that a marker can
-re-create. The 20 held-out split-B photos from MVTec AD (good and defective bottles
+re-create. The 21 held-out split-B photos from MVTec AD (good and defective bottles
 nobody trained on) are placed one by one on a white, backlit belt and move under a
 fixed camera, as on a bottle-inspection line. Nothing in the frame is generated: the
 bottles are the dataset's photographs; only their motion is simulated.

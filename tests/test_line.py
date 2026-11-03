@@ -117,7 +117,7 @@ class TestLineEndToEnd(unittest.TestCase):
         import torch
         ckpt = torch.load(out, map_location="cpu", weights_only=True)
         self.assertEqual(ckpt["kind"], "foundad")
-        self.assertLessEqual(ckpt["config"]["t_low"], ckpt["threshold"])
+        self.assertGreaterEqual(ckpt["config"]["t_high"], ckpt["threshold"])  # REJECT line above the PASS line
         self.assertEqual(ckpt["config"]["n_train"], 2)
         self.assertTrue(ckpt["config"]["train_source"].endswith("my_product"))
 

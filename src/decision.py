@@ -8,14 +8,17 @@ designed in Assignment 1 (section 8.4):
                                        good part or shipping a bad one
     score >= t_high           REJECT   reject signal, log, heatmap shown
 
-t_high is the model's calibrated threshold (best F1 on split A), so the OK / REJECT
-numbers of the evaluation still hold: REJECT means exactly what it meant before.
-t_low comes from the score distribution of good parts (train_foundad.py) and both
-can be changed by the operator in the dashboard without retraining.
+t_low is the model's calibrated threshold (best F1 on split A), so the evaluation's
+binary numbers still hold: a part at or above it does not pass. t_high is the REJECT
+line: for FoundAD it sits above every good image the model was calibrated on
+(train_foundad.py); the two older models have no calibrated t_high, so for them the
+band is empty (t_high = t_low) until the operator sets one. Both lines can be changed
+in the dashboard without retraining.
 
 Severity of a REJECT is how far the score sits above t_high, as a percentage of
-t_high: below 5% minor, below 15% moderate, otherwise severe (operator-adjustable).
-Because it is relative, the same rule works for every model's score scale.
+t_high: below 50% minor, below 150% moderate, otherwise severe (operator-adjustable;
+the defaults roughly split the bottle defect scores into thirds). Because it is
+relative, the same rule works for every model's score scale.
 
 Frame votes: on a video or camera the same part is seen in several frames. The part's
 score is the median of up to N frame scores, so one blurred or half-visible frame
@@ -27,7 +30,7 @@ from statistics import median
 PASS, REVIEW, REJECT = "PASS", "REVIEW", "REJECT"
 VERDICTS = (PASS, REVIEW, REJECT)
 SEVERITIES = ("minor", "moderate", "severe")
-DEFAULT_SEVERITY_PCT = (5.0, 15.0)  # moderate from +5% above t_high, severe from +15%
+DEFAULT_SEVERITY_PCT = (50.0, 150.0)  # moderate from +50% above t_high, severe from +150%
 
 
 @dataclass(frozen=True)
@@ -58,12 +61,12 @@ class Decision:
 
 
 def rule_from_checkpoint(ckpt: dict) -> Rule:
-    """The default rule for a model: t_high = its threshold; t_low from its calibration
-    if it has one (FoundAD), otherwise equal to t_high (no REVIEW band until the
+    """The default rule for a model: t_low = its threshold; t_high from its calibration
+    if it has one (FoundAD), otherwise equal to t_low (no REVIEW band until the
     operator sets one)."""
-    t_high = float(ckpt["threshold"])
-    t_low = float(ckpt.get("config", {}).get("t_low", t_high))
-    return Rule(t_low=min(t_low, t_high), t_high=t_high)
+    t_low = float(ckpt["threshold"])
+    t_high = float(ckpt.get("config", {}).get("t_high", t_low))
+    return Rule(t_low=t_low, t_high=max(t_high, t_low))
 
 
 def severity(score: float, rule: Rule) -> str | None:

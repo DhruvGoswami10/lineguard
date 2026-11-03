@@ -16,17 +16,18 @@ class TestRule(unittest.TestCase):
             Rule(t_low=1.0, t_high=1.0, moderate_pct=20, severe_pct=10)
 
     def test_defaults_from_checkpoint_with_review_band(self):
-        rule = rule_from_checkpoint({"threshold": 11.5, "config": {"t_low": 11.2}})
-        self.assertEqual((rule.t_low, rule.t_high), (11.2, 11.5))
+        # FoundAD: the checkpoint's threshold is the PASS line, its calibrated t_high the REJECT line
+        rule = rule_from_checkpoint({"threshold": 2.36, "config": {"t_high": 4.28}})
+        self.assertEqual((rule.t_low, rule.t_high), (2.36, 4.28))
         self.assertEqual((rule.moderate_pct, rule.severe_pct), DEFAULT_SEVERITY_PCT)
 
     def test_defaults_from_checkpoint_without_band(self):
-        rule = rule_from_checkpoint({"threshold": 0.0045, "config": {}})
+        rule = rule_from_checkpoint({"threshold": 0.0045, "config": {}})  # autoencoder, CNN
         self.assertEqual(rule.t_low, rule.t_high)  # zero-width band: OK / REJECT as before
 
-    def test_t_low_in_checkpoint_is_capped_at_threshold(self):
-        rule = rule_from_checkpoint({"threshold": 1.0, "config": {"t_low": 1.5}})
-        self.assertEqual(rule.t_low, 1.0)
+    def test_t_high_in_checkpoint_is_never_below_the_threshold(self):
+        rule = rule_from_checkpoint({"threshold": 1.0, "config": {"t_high": 0.5}})
+        self.assertEqual((rule.t_low, rule.t_high), (1.0, 1.0))
 
 
 class TestDecide(unittest.TestCase):
@@ -44,18 +45,18 @@ class TestDecide(unittest.TestCase):
         self.assertEqual(decide(5.0, rule).verdict, REJECT)
 
     def test_severity_bands_are_relative_to_t_high(self):
-        # moderate from +5%, severe from +15% of t_high = 12 -> 12.6 and 13.8
+        # moderate from +50%, severe from +150% of t_high = 12 -> 18 and 30
         self.assertEqual(severity(12.0, self.rule), "minor")
-        self.assertEqual(severity(12.5, self.rule), "minor")
-        self.assertEqual(severity(12.7, self.rule), "moderate")
-        self.assertEqual(severity(13.7, self.rule), "moderate")
-        self.assertEqual(severity(13.9, self.rule), "severe")
+        self.assertEqual(severity(17.9, self.rule), "minor")
+        self.assertEqual(severity(18.1, self.rule), "moderate")
+        self.assertEqual(severity(29.9, self.rule), "moderate")
+        self.assertEqual(severity(30.1, self.rule), "severe")
         self.assertIsNone(severity(11.0, self.rule))
 
     def test_severity_scales_with_the_score_scale(self):
         small = Rule(t_low=0.004, t_high=0.0045)  # autoencoder-sized scores
-        self.assertEqual(severity(0.0045 * 1.2, small), "severe")
-        self.assertEqual(severity(0.0045 * 1.01, small), "minor")
+        self.assertEqual(severity(0.0045 * 2.6, small), "severe")
+        self.assertEqual(severity(0.0045 * 1.1, small), "minor")
 
     def test_decision_carries_its_rule(self):
         d = decide(13.0, self.rule)
