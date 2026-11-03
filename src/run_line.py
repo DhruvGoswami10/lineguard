@@ -136,7 +136,7 @@ class Line:
         crop_path = self.out / "parts" / f"{part_id}.png"
         heat_path = self.out / "parts" / f"{part_id}_heatmap.png"
         image.save(crop_path)
-        shown = dict(result, score=final, threshold=rule.t_high, verdict=decision.verdict)
+        shown = dict(result, score=final, threshold=rule.t_high, t_low=rule.t_low, verdict=decision.verdict)
         save_verdict_figure(image, shown, self.args.model, heat_path,
                             f"LineGuard | {MODEL_NAMES[self.args.model]} | {part_id}")
 

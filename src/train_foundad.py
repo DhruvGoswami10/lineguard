@@ -16,10 +16,10 @@
    the autoencoder (split A is the detector's only use of labelled images). This is the
    PASS line (t_low): the evaluation's binary metrics are computed at this cut.
 4. Set the REJECT line (t_high) from good images the model never trained on (validation
-   + split-A good): halfway between the highest of their scores and the lowest split-A
-   defect score above it, so no calibration good image would be rejected outright.
-   Parts between the two lines go to REVIEW: a person decides instead of the part being
-   passed or scrapped (src/decision.py).
+   + split-A good): the lowest split-A defect score above all of them, so REJECT means
+   "at least as anomalous as a known defect and more than any known good part", and no
+   calibration good image would be rejected outright. Parts between the two lines go to
+   REVIEW: a person decides instead of the part being passed or scrapped (src/decision.py).
 5. Save the predictor + both thresholds to weights/foundad.pt and the loss curve to results/.
 
 --calibrate-only skips the training and recomputes the thresholds for the predictor
@@ -165,13 +165,14 @@ def scores_for(model, root, items, size, device) -> tuple[np.ndarray, list[np.nd
 
 
 def reject_line(good_scores: np.ndarray, defect_scores: np.ndarray, threshold: float) -> float:
-    """The REJECT line: halfway between the highest good score and the lowest defect score
-    above it (the midpoint rule of best_f1_threshold), so no calibration good image is
-    rejected outright, and never below the PASS line. With no defect above the highest
-    good image, 10% above it."""
+    """The REJECT line: the lowest defect score above the highest good score, so no
+    calibration good image is rejected outright and a REJECT is at least as anomalous as
+    a defect seen in calibration; never below the PASS line. (A midpoint between the two,
+    like best_f1_threshold, coincides with the PASS line whenever split A is separable and
+    leaves no REVIEW band.) With no defect above the highest good image, 10% above it."""
     top_good = float(good_scores.max())
     above = defect_scores[defect_scores > top_good]
-    t_high = (top_good + float(above.min())) / 2 if len(above) else top_good * 1.1
+    t_high = float(above.min()) if len(above) else top_good * 1.1
     return max(t_high, threshold)
 
 
@@ -196,8 +197,8 @@ def calibrate_on_split(model, args, split) -> dict:
             "map_floor": float(np.median(np.stack(good_maps))),  # typical normal patch error: the heatmap's "blue"
             "threshold_rule": "best F1 on split A (midpoint between neighbouring scores); the PASS line",
             "split_a_f1": 2 * tp / (2 * tp + fp + fn),
-            "t_high_rule": f"midpoint between the highest of {len(good_scores)} unseen good images "
-                           "(val + split-A good) and the lowest split-A defect above it; the REJECT line",
+            "t_high_rule": f"the lowest split-A defect score above all {len(good_scores)} unseen good images "
+                           "(val + split-A good); the REJECT line",
             "n_unseen_good": len(good_scores), "unseen_good_in_review_band": in_band,
             "unseen_good_max": float(good_scores.max())}
 

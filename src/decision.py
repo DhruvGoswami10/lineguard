@@ -10,8 +10,8 @@ designed in Assignment 1 (section 8.4):
 
 t_low is the model's calibrated threshold (best F1 on split A), so the evaluation's
 binary numbers still hold: a part at or above it does not pass. t_high is the REJECT
-line: for FoundAD it sits above every good image the model was calibrated on
-(train_foundad.py); the two older models have no calibrated t_high, so for them the
+line: for FoundAD it is the mildest split-A defect score above every good image the model
+was calibrated on (train_foundad.py); the two older models have no calibrated t_high, so for them the
 band is empty (t_high = t_low) until the operator sets one. Both lines can be changed
 in the dashboard without retraining.
 

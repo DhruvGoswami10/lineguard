@@ -33,8 +33,8 @@ Reproducibility still beats features.
 - Technique 3: frozen DINOv2 ViT-S/14 (`src/dino.py`, own minimal implementation loading the official
   weights, `src/download_backbone.py`) + FoundAD predictor trained on 4 good images with CutPaste
   (`src/foundad.py`, `src/train_foundad.py`). Thresholds: t_low (PASS line, the checkpoint's threshold)
-  best-F1 on split A; t_high (REJECT line) above every unseen good image (midpoint to the next split-A
-  defect). `--calibrate-only` recomputes both without retraining. Checkpoint stores only the predictor.
+  best-F1 on split A; t_high (REJECT line) = the lowest split-A defect above every unseen good image.
+  `--calibrate-only` recomputes both without retraining. Checkpoint stores only the predictor.
 - Evaluation extended to three models; `results/SUMMARY.md` has three columns.
 
 ## Data: MVTec AD, `bottle` category only
@@ -231,3 +231,10 @@ as `- YYYY-MM-DD — <prompt>`. Don't paraphrase it.
   warm start already halved the good-crop scores). Lossless video was rejected: FFV1 is ~230 KB/frame
   (400 MB for the demo feed) and OpenCV's writer ignores quality options for mp4v. The model was retrained
   from scratch with (2); run-1 log kept as `results/logs/train_foundad_run1_no_compression_aug.log`.
+- 2026-11-03 (after retraining with compression augmentation) — REJECT line rule changed once more. The
+  retrained model separates split A cleanly (highest unseen good 3.02, mildest defect 3.26), so the
+  midpoint rule for t_high returned the best-F1 cut itself (3.14 = 3.14: empty band again, by
+  construction whenever split A is separable). t_high is now the lowest split-A defect above every
+  unseen good image (3.26); t_low stays the best-F1 midpoint (3.14). On the demo feed the retrained
+  model decides 21/21 parts correctly (good 1.05-2.20, defect 4.10-13.8) and nothing lands in the
+  band; REVIEW is exercised by the unit tests and by the operator's settings in the dashboard.

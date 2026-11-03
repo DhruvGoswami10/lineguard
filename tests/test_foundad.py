@@ -1,5 +1,5 @@
 """Technique 3 tests: the minimal DINOv2 encoder (shapes, strict weight loading), the
-predictor, the top-K score, CutPaste synthesis and the Otsu foreground rule.
+predictor, the top-K score, CutPaste synthesis, the Otsu foreground rule and the REJECT-line rule.
 The strict-loading test needs weights/dinov2_vits14_pretrain.pth and is skipped without it."""
 import random
 import unittest
@@ -13,6 +13,7 @@ from src.dino import PATCH, VARIANTS, DinoVisionTransformer, load_dino
 from src.download_backbone import BACKBONES, backbone_path
 from src.foundad import (CutPaste, FoundAD, Predictor, foreground_mask, foundad_transform, otsu_threshold,
                          patch_foreground, score_from_errors, upsample_map)
+from src.train_foundad import reject_line
 
 REPO = Path(__file__).resolve().parents[1]
 BACKBONE = REPO / backbone_path("vits14")
@@ -146,6 +147,23 @@ class TestSynthesis(unittest.TestCase):
         cp = CutPaste(random.Random(1))
         self.assertTrue(np.any(cp.blob(image) != image))
         self.assertTrue(np.any(cp.scar(image) != image))
+
+
+class TestCalibrationRules(unittest.TestCase):
+    """The REJECT line (train_foundad.reject_line) by hand-worked numbers."""
+
+    def test_reject_line_is_the_mildest_defect_above_every_good(self):
+        good, defects = np.array([1.0, 2.0, 3.0]), np.array([2.5, 3.5, 5.0])
+        self.assertEqual(reject_line(good, defects, threshold=2.4), 3.5)   # 2.5 sits below a good image
+        # separable split: best-F1 cut 3.25 is the midpoint; the band [3.25, 3.5) still exists
+        self.assertEqual(reject_line(good, np.array([3.5, 5.0]), threshold=3.25), 3.5)
+
+    def test_reject_line_never_sits_below_the_pass_line(self):
+        good, defects = np.array([1.0, 2.0]), np.array([2.5])
+        self.assertEqual(reject_line(good, defects, threshold=4.0), 4.0)
+
+    def test_reject_line_without_a_defect_above_the_goods(self):
+        self.assertAlmostEqual(reject_line(np.array([1.0, 2.0]), np.array([1.5]), threshold=1.2), 2.2)
 
 
 if __name__ == "__main__":
