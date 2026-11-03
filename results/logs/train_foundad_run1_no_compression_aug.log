@@ -1,0 +1,34 @@
+Dataset: data/mvtec/bottle
+  train/good            209 images
+  test/good              20 images
+  test/broken_large      20 images
+  test/broken_small      22 images
+  test/contamination     21 images
+Training FoundAD predictor (10,943,232 parameters) on 4 good images, DINOv2 vits14 frozen, 448 px, 1000 steps (cpu).
+step    50/1000  loss 9.10078  (6.14 s/step)
+step   100/1000  loss 3.88947  (6.34 s/step)
+step   150/1000  loss 2.08576  (6.29 s/step)
+step   200/1000  loss 1.46436  (6.64 s/step)
+step   250/1000  loss 1.25282  (6.64 s/step)
+step   300/1000  loss 1.01958  (6.68 s/step)
+step   350/1000  loss 0.97951  (6.73 s/step)
+step   400/1000  loss 0.83510  (6.77 s/step)
+step   450/1000  loss 0.86382  (6.81 s/step)
+step   500/1000  loss 0.77356  (6.84 s/step)
+step   550/1000  loss 0.71389  (6.87 s/step)
+step   600/1000  loss 0.61337  (6.87 s/step)
+step   650/1000  loss 0.67710  (6.86 s/step)
+step   700/1000  loss 0.65798  (6.86 s/step)
+step   750/1000  loss 0.64958  (6.86 s/step)
+step   800/1000  loss 0.61274  (6.86 s/step)
+step   850/1000  loss 0.60071  (6.86 s/step)
+step   900/1000  loss 0.59578  (6.86 s/step)
+step   950/1000  loss 0.58614  (6.86 s/step)
+step  1000/1000  loss 0.55961  (6.86 s/step)
+REJECT threshold (best F1 on split A): 2.36210 (split-A F1 0.984); REVIEW from 2.36210 (95th percentile of 31 unseen good images)
+Saved weights/foundad.pt
+exit 0
+Dataset: data/mvtec/bottle
+Recalibrating the predictor in weights/foundad.pt (10,943,232 parameters, trained on 4 good images); no training.
+PASS below 2.36210 (best F1 on split A: 0.984); REJECT from 4.28386 (above all 31 unseen good images; 3 of them would go to REVIEW)
+Saved weights/foundad.pt (thresholds updated, weights unchanged)

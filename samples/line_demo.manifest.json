@@ -1,0 +1,143 @@
+{
+  "video": "line_demo.mp4",
+  "fps": 25,
+  "frames": 1809,
+  "width": 1280,
+  "height": 720,
+  "station_roi": {
+    "x": 240,
+    "y": 60,
+    "w": 800,
+    "h": 600
+  },
+  "speed_px_per_frame": 10,
+  "seed": 42,
+  "parts": [
+    {
+      "image": "good_018.png",
+      "label": "good",
+      "enters_station": 81,
+      "leaves_station": 103
+    },
+    {
+      "image": "broken_small_011.png",
+      "label": "broken_small",
+      "enters_station": 161,
+      "leaves_station": 183
+    },
+    {
+      "image": "good_007.png",
+      "label": "good",
+      "enters_station": 241,
+      "leaves_station": 263
+    },
+    {
+      "image": "broken_small_010.png",
+      "label": "broken_small",
+      "enters_station": 321,
+      "leaves_station": 343
+    },
+    {
+      "image": "contamination_002.png",
+      "label": "contamination",
+      "enters_station": 401,
+      "leaves_station": 423
+    },
+    {
+      "image": "good_003.png",
+      "label": "good",
+      "enters_station": 481,
+      "leaves_station": 503
+    },
+    {
+      "image": "good_008.png",
+      "label": "good",
+      "enters_station": 561,
+      "leaves_station": 583
+    },
+    {
+      "image": "good_013.png",
+      "label": "good",
+      "enters_station": 641,
+      "leaves_station": 663
+    },
+    {
+      "image": "broken_small_014.png",
+      "label": "broken_small",
+      "enters_station": 721,
+      "leaves_station": 743
+    },
+    {
+      "image": "good_002.png",
+      "label": "good",
+      "enters_station": 801,
+      "leaves_station": 823
+    },
+    {
+      "image": "good_010.png",
+      "label": "good",
+      "enters_station": 881,
+      "leaves_station": 903
+    },
+    {
+      "image": "contamination_005.png",
+      "label": "contamination",
+      "enters_station": 961,
+      "leaves_station": 983
+    },
+    {
+      "image": "broken_large_003.png",
+      "label": "broken_large",
+      "enters_station": 1041,
+      "leaves_station": 1063
+    },
+    {
+      "image": "good_000.png",
+      "label": "good",
+      "enters_station": 1121,
+      "leaves_station": 1143
+    },
+    {
+      "image": "broken_large_007.png",
+      "label": "broken_large",
+      "enters_station": 1201,
+      "leaves_station": 1223
+    },
+    {
+      "image": "good_009.png",
+      "label": "good",
+      "enters_station": 1281,
+      "leaves_station": 1303
+    },
+    {
+      "image": "contamination_000.png",
+      "label": "contamination",
+      "enters_station": 1361,
+      "leaves_station": 1383
+    },
+    {
+      "image": "contamination_001.png",
+      "label": "contamination",
+      "enters_station": 1441,
+      "leaves_station": 1463
+    },
+    {
+      "image": "broken_large_002.png",
+      "label": "broken_large",
+      "enters_station": 1521,
+      "leaves_station": 1543
+    },
+    {
+      "image": "broken_small_001.png",
+      "label": "broken_small",
+      "enters_station": 1601,
+      "leaves_station": 1623
+    },
+    {
+      "image": "good_019.png",
+      "label": "good",
+      "enters_station": 1681,
+      "leaves_station": 1703
+    }
+  ]
+}

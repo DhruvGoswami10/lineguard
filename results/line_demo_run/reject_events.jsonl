@@ -1,0 +1,11 @@
+{"timestamp": "2026-11-03T02:39:58.028+00:00", "part_id": "063949-0002", "score": 6.580758094787598, "severity": "moderate", "inspection_id": 2, "action": "DIVERT"}
+{"timestamp": "2026-11-03T02:40:05.641+00:00", "part_id": "063949-0004", "score": 9.544795036315918, "severity": "severe", "inspection_id": 4, "action": "DIVERT"}
+{"timestamp": "2026-11-03T02:40:09.496+00:00", "part_id": "063949-0005", "score": 4.097905158996582, "severity": "minor", "inspection_id": 5, "action": "DIVERT"}
+{"timestamp": "2026-11-03T02:40:25.023+00:00", "part_id": "063949-0009", "score": 9.21208381652832, "severity": "severe", "inspection_id": 9, "action": "DIVERT"}
+{"timestamp": "2026-11-03T02:40:36.233+00:00", "part_id": "063949-0012", "score": 13.771116256713867, "severity": "severe", "inspection_id": 12, "action": "DIVERT"}
+{"timestamp": "2026-11-03T02:40:40.473+00:00", "part_id": "063949-0013", "score": 10.79951286315918, "severity": "severe", "inspection_id": 13, "action": "DIVERT"}
+{"timestamp": "2026-11-03T02:40:47.943+00:00", "part_id": "063949-0015", "score": 11.796975135803223, "severity": "severe", "inspection_id": 15, "action": "DIVERT"}
+{"timestamp": "2026-11-03T02:40:55.878+00:00", "part_id": "063949-0017", "score": 13.2958402633667, "severity": "severe", "inspection_id": 17, "action": "DIVERT"}
+{"timestamp": "2026-11-03T02:40:59.517+00:00", "part_id": "063949-0018", "score": 6.697085380554199, "severity": "moderate", "inspection_id": 18, "action": "DIVERT"}
+{"timestamp": "2026-11-03T02:41:03.430+00:00", "part_id": "063949-0019", "score": 12.399667739868164, "severity": "severe", "inspection_id": 19, "action": "DIVERT"}
+{"timestamp": "2026-11-03T02:41:07.185+00:00", "part_id": "063949-0020", "score": 6.062100410461426, "severity": "moderate", "inspection_id": 20, "action": "DIVERT"}

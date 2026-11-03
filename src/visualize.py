@@ -10,6 +10,11 @@ import numpy as np  # noqa: E402
 from PIL import Image  # noqa: E402
 
 DISPLAY_SIZE = 448  # pixels per panel
+MODEL_NAMES = {"ae": "Convolutional autoencoder", "cnn": "ResNet-18 classifier",
+               "foundad": "FoundAD (DINOv2 few-shot)"}
+HEAT_TITLES = {"ae": "Rebuild error (red = over threshold)",
+               "cnn": "Grad-CAM for 'defect' (relative: own max = red)",
+               "foundad": "Patch feature error (red = over threshold)"}
 
 
 def save_figure(fig, out_path) -> None:
@@ -19,54 +24,64 @@ def save_figure(fig, out_path) -> None:
     plt.close(fig)
 
 
-def plot_curves(curves: dict, out_path, title: str, ylabel: str, best_epoch: int | None = None) -> None:
+def plot_curves(curves: dict, out_path, title: str, ylabel: str, best_epoch: int | None = None,
+                xlabel: str = "epoch") -> None:
     """Line plot of per-epoch values, e.g. {"train": [...], "validation": [...]}."""
     fig, ax = plt.subplots(figsize=(6, 4))
     for name, values in curves.items():
         ax.plot(range(1, len(values) + 1), values, label=name)
     if best_epoch:
         ax.axvline(best_epoch, color="grey", linestyle="--", label=f"kept epoch ({best_epoch})")
-    ax.set(title=title, xlabel="epoch", ylabel=ylabel)
+    ax.set(title=title, xlabel=xlabel, ylabel=ylabel)
     ax.grid(alpha=0.3)
     ax.legend()
     fig.tight_layout()
     save_figure(fig, out_path)
 
 
-def overlay(image: Image.Image, heatmap: np.ndarray, vmax: float) -> np.ndarray:
-    """Blend a jet-coloured heatmap (scaled so vmax = red) over the image."""
+def overlay(image: Image.Image, heatmap: np.ndarray, vmax: float, vmin: float = 0.0) -> np.ndarray:
+    """Blend a jet-coloured heatmap (scaled so vmin = blue, vmax = red) over the image."""
     size = (DISPLAY_SIZE, DISPLAY_SIZE)
     base = np.asarray(image.convert("RGB").resize(size, Image.BILINEAR)) / 255.0
-    scaled = np.clip(heatmap / vmax, 0, 1).astype(np.float32)
+    scaled = np.clip((heatmap - vmin) / (vmax - vmin), 0, 1).astype(np.float32)
     heat = np.asarray(Image.fromarray(scaled).resize(size, Image.BILINEAR))  # small map -> image size
     return 0.55 * base + 0.45 * plt.get_cmap("jet")(heat)[..., :3]
 
 
 def save_verdict_figure(image: Image.Image, result: dict, kind: str, out_path, title: str,
                         truth: str | None = None) -> None:
-    """Three panels: input image | heatmap overlay | verdict with score and threshold.
+    """Three panels: input image | heatmap overlay | verdict with score and threshold
+    (on the line, with both the REVIEW and the REJECT line when they differ).
 
-    Autoencoder heatmaps are scaled so red means "error at or above the reject
-    threshold". Grad-CAM maps are scaled 0..1 per image (standard Grad-CAM), so they
-    are relative: even a confidently OK image shows its strongest spot in red.
+    Autoencoder and FoundAD heatmaps are scaled so red means "error at or above the
+    reject threshold" (FoundAD's score is the mean of its 10 hottest patches, so a
+    rejected part always has red patches). Grad-CAM maps are scaled 0..1 per image
+    (standard Grad-CAM), so they are relative: even a confidently OK image shows its
+    strongest spot in red.
     """
-    vmax = result["threshold"] if kind == "ae" else 1.0
-    heat_title = ("Rebuild error (red = over threshold)" if kind == "ae"
-                  else "Grad-CAM for 'defect' (relative: own max = red)")
+    vmax = 1.0 if kind == "cnn" else result["threshold"]
+    # FoundAD patch errors never reach 0 (a normal patch still has some error), so its
+    # map is scaled from the typical normal patch error ("floor") up to the threshold.
+    vmin = result.get("map_floor", 0.0)
+    heat_title = HEAT_TITLES[kind]
 
     fig, axes = plt.subplots(1, 3, figsize=(10.5, 3.7), gridspec_kw={"width_ratios": [1, 1, 0.8]})
     axes[0].imshow(image.convert("RGB").resize((DISPLAY_SIZE, DISPLAY_SIZE), Image.BILINEAR))
     axes[0].set_title("Input", fontsize=10)
-    axes[1].imshow(overlay(image, result["heatmap"], vmax))
+    axes[1].imshow(overlay(image, result["heatmap"], vmax, vmin))
     axes[1].set_title(heat_title, fontsize=10)
     for ax in axes:
         ax.axis("off")
 
-    colour = "green" if result["verdict"] == "OK" else "red"
+    colour = {"OK": "green", "PASS": "green", "REVIEW": "darkorange"}.get(result["verdict"], "red")
     axes[2].text(0.5, 0.7, result["verdict"], color=colour, fontsize=30, weight="bold",
                  ha="center", va="center")
-    fmt = ".4g" if kind == "ae" else ".4f"  # CNN probabilities: fixed decimals, so 0.9999 never shows as "1"
-    lines = [f"score     {result['score']:{fmt}}", f"threshold {result['threshold']:{fmt}}"]
+    fmt = ".4f" if kind == "cnn" else ".4g"  # CNN probabilities: fixed decimals, so 0.9999 never shows as "1"
+    lines = [f"score     {result['score']:{fmt}}"]
+    if result.get("t_low", result["threshold"]) != result["threshold"]:   # the line's two lines
+        lines += [f"review >= {result['t_low']:{fmt}}", f"reject >= {result['threshold']:{fmt}}"]
+    else:
+        lines.append(f"threshold {result['threshold']:{fmt}}")
     if truth:
         lines.append(f"truth     {truth}")
     axes[2].text(0.5, 0.32, "\n".join(lines), family="monospace", fontsize=10, ha="center", va="center")

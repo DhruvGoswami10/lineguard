@@ -17,6 +17,9 @@ from src.inference import inspect, load_model
 REPO = Path(__file__).resolve().parents[1]
 SAMPLES = REPO / "samples"
 HAVE_ASSETS = (REPO / "weights" / "ae.pt").exists() and SAMPLES.is_dir()
+# Technique 3 needs its checkpoint and the DINOv2 file (python -m src.download_backbone).
+MODELS = ("ae", "cnn") + (("foundad",) if (REPO / "weights" / "foundad.pt").exists()
+                          and (REPO / "weights" / "dinov2_vits14_pretrain.pth").exists() else ())
 
 
 def original_path(sample: Path) -> str:
@@ -27,9 +30,9 @@ def original_path(sample: Path) -> str:
 
 @unittest.skipUnless(HAVE_ASSETS, "weights/ or samples/ missing")
 class TestDemo(unittest.TestCase):
-    def test_cli_runs_on_cpu_for_both_models(self):
+    def test_cli_runs_on_cpu_for_every_model(self):
         with tempfile.TemporaryDirectory() as out:
-            for model in ("ae", "cnn"):
+            for model in MODELS:
                 done = subprocess.run(
                     [sys.executable, "-m", "src.demo", "--model", model, "--input", "samples/good_000.png",
                      "--device", "cpu", "--out", out],
@@ -62,7 +65,9 @@ class TestDemo(unittest.TestCase):
         with open(REPO / "results" / "scores_split_b.csv", encoding="utf-8", newline="") as f:
             reported = {row["path"]: row for row in csv.DictReader(f)}
         cpu = torch.device("cpu")
-        for kind in ("ae", "cnn"):
+        for kind in MODELS:
+            if f"{kind}_score" not in next(iter(reported.values())):
+                continue  # results pack predates this model
             model, ckpt = load_model(REPO / "weights" / f"{kind}.pt", cpu)
             for sample in sorted(SAMPLES.glob("*.png")):
                 result = inspect(model, ckpt, load_image(sample), cpu, with_heatmap=False)

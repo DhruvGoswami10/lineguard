@@ -1,0 +1,36 @@
+Running on samples/line_demo.mp4: station ROI(x=240, y=60, w=800, h=600), 5 frame votes per part, FoundAD (DINOv2 few-shot) on cpu. Writing results/line/ ...
+063949-0001  score 2.1972  PASS  [5 frames, t_low 3.144, t_high 3.264]
+REJECT SIGNAL -> 063949-0002 (moderate, score 6.5808): divert
+063949-0002  score 6.5808  REJECT (moderate)  [5 frames, t_low 3.144, t_high 3.264]
+063949-0003  score 1.6885  PASS  [5 frames, t_low 3.144, t_high 3.264]
+REJECT SIGNAL -> 063949-0004 (severe, score 9.5448): divert
+063949-0004  score 9.5448  REJECT (severe)  [5 frames, t_low 3.144, t_high 3.264]
+REJECT SIGNAL -> 063949-0005 (minor, score 4.0979): divert
+063949-0005  score 4.0979  REJECT (minor)  [5 frames, t_low 3.144, t_high 3.264]
+063949-0006  score 1.7364  PASS  [5 frames, t_low 3.144, t_high 3.264]
+063949-0007  score 1.27  PASS  [5 frames, t_low 3.144, t_high 3.264]
+063949-0008  score 1.4395  PASS  [5 frames, t_low 3.144, t_high 3.264]
+REJECT SIGNAL -> 063949-0009 (severe, score 9.2121): divert
+063949-0009  score 9.2121  REJECT (severe)  [5 frames, t_low 3.144, t_high 3.264]
+063949-0010  score 1.6828  PASS  [5 frames, t_low 3.144, t_high 3.264]
+063949-0011  score 2.0305  PASS  [5 frames, t_low 3.144, t_high 3.264]
+REJECT SIGNAL -> 063949-0012 (severe, score 13.771): divert
+063949-0012  score 13.771  REJECT (severe)  [5 frames, t_low 3.144, t_high 3.264]
+REJECT SIGNAL -> 063949-0013 (severe, score 10.8): divert
+063949-0013  score 10.8  REJECT (severe)  [5 frames, t_low 3.144, t_high 3.264]
+063949-0014  score 1.4316  PASS  [5 frames, t_low 3.144, t_high 3.264]
+REJECT SIGNAL -> 063949-0015 (severe, score 11.797): divert
+063949-0015  score 11.797  REJECT (severe)  [5 frames, t_low 3.144, t_high 3.264]
+063949-0016  score 1.0529  PASS  [5 frames, t_low 3.144, t_high 3.264]
+REJECT SIGNAL -> 063949-0017 (severe, score 13.296): divert
+063949-0017  score 13.296  REJECT (severe)  [5 frames, t_low 3.144, t_high 3.264]
+REJECT SIGNAL -> 063949-0018 (moderate, score 6.6971): divert
+063949-0018  score 6.6971  REJECT (moderate)  [5 frames, t_low 3.144, t_high 3.264]
+REJECT SIGNAL -> 063949-0019 (severe, score 12.4): divert
+063949-0019  score 12.4  REJECT (severe)  [5 frames, t_low 3.144, t_high 3.264]
+REJECT SIGNAL -> 063949-0020 (moderate, score 6.0621): divert
+ALERT: Reject rate 55% over the last 20 parts exceeds the control limit 20% (baseline 5%, 3 sigma)
+063949-0020  score 6.0621  REJECT (moderate)  [5 frames, t_low 3.144, t_high 3.264]
+063949-0021  score 1.4811  PASS  [5 frames, t_low 3.144, t_high 3.264]
+
+Done: 21 parts this run; QC log now holds 21 (10 PASS, 0 REVIEW, 11 REJECT). Reject signals fired: 11. Outputs in results/line/
