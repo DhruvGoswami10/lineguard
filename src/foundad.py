@@ -20,6 +20,7 @@ Reference implementation: github.com/ymxlzgy/FoundAD (MIT licence). Re-implement
 here against the repository's conventions (fixed seeds, CPU demo, unittest) rather
 than vendored: its environment pins Python 3.8 / PyTorch 2.2 and 20 extra packages.
 """
+import io
 import math
 import random
 
@@ -104,20 +105,41 @@ def foundad_transform(size: int = FOUNDAD_SIZE) -> T.Compose:
     return T.Compose([T.Resize((size, size)), T.ToTensor(), T.Normalize(IMAGENET_MEAN, IMAGENET_STD)])
 
 
-def score_from_errors(errors: torch.Tensor, top_k: int) -> tuple[float, np.ndarray]:
-    """(image score, error map). Score = mean of the top-K patch errors; map = grid of errors."""
+def score_from_errors(errors: torch.Tensor, top_k: int,
+                      foreground: np.ndarray | None = None) -> tuple[float, np.ndarray]:
+    """(image score, error map). Score = mean of the top-K patch errors; map = grid of errors.
+
+    With a foreground mask (patch grid, True on the part) only the part's patches can
+    score: the belt around the part is not inspected. Why: the line's frames carry codec
+    noise and lighting that the dataset's pure-white PNG backgrounds never had, and on
+    the demo feed those background patches alone lifted every good bottle above the
+    REJECT line while the part itself scored as in the dataset. A defect is on the part.
+    """
     errors = errors[0]
     side = int(math.sqrt(errors.numel()))
-    score = errors.topk(min(top_k, errors.numel())).values.mean()
-    return float(score), errors.reshape(side, side).cpu().numpy()
+    grid = errors.reshape(side, side)
+    if foreground is not None and foreground.any():
+        grid = torch.where(torch.from_numpy(foreground).to(grid.device), grid, torch.zeros_like(grid))
+    score = grid.flatten().topk(min(top_k, grid.numel())).values.mean()
+    return float(score), grid.cpu().numpy()
+
+
+def patch_foreground(image: np.ndarray, side: int) -> np.ndarray:
+    """side x side patch mask of the part: a patch counts as part if more than half of its
+    pixels are foreground (foreground_mask: Otsu, border = background)."""
+    mask = foreground_mask(image)
+    patch = mask.shape[0] // side
+    return mask[:side * patch, :side * patch].reshape(side, patch, side, patch).mean(axis=(1, 3)) > 0.5
 
 
 def foundad_inspect(model: FoundAD, image: Image.Image, size: int, device) -> tuple[float, np.ndarray]:
-    """Score one PIL image. Returns (score, 32x32 patch-error map)."""
+    """Score one PIL image. Returns (score, 32x32 patch-error map); only the part's patches score."""
+    resized = image.convert("RGB").resize((size, size), Image.BILINEAR)
+    foreground = patch_foreground(np.asarray(resized), patch_grid_side(size))
     x = foundad_transform(size)(image).unsqueeze(0).to(device)
     with torch.no_grad():
         errors = model.patch_errors(x)
-    return score_from_errors(errors, model.top_k)
+    return score_from_errors(errors, model.top_k, foreground)
 
 
 def upsample_map(error_map: np.ndarray, size: int) -> np.ndarray:
@@ -210,6 +232,24 @@ def train_augment() -> T.Compose:
     appearance = T.RandomChoice([T.ColorJitter(0.3, 0.3, 0.3, 0.05), T.RandomGrayscale(1.0),
                                  T.GaussianBlur(23, sigma=(0.1, 2.0))])
     return T.Compose([T.RandomApply([orientation], p=0.3), T.RandomApply([appearance], p=0.3)])
+
+
+COMPRESS_P = 0.5            # share of training pairs that go through a codec round trip
+COMPRESS_QUALITY = (40, 95)  # JPEG quality range: USB cameras and video files sit in it
+
+
+def jpeg_round_trip(image: np.ndarray, quality: int) -> np.ndarray:
+    """The image after JPEG compression at this quality (uint8 RGB in, uint8 RGB out).
+
+    Why: the line's frames come from a camera or a video file, so the model sees codec
+    artefacts (8x8 blocks, chroma at half resolution) that the dataset's PNGs never had.
+    Without this, a model trained on PNGs scored every bottle of the demo feed 4-6x higher
+    than the same bottle as a PNG, and rejected all of them. Compressing both the target
+    and the context of a training pair makes "compressed normal" part of normal."""
+    buffer = io.BytesIO()
+    Image.fromarray(image).save(buffer, "JPEG", quality=int(quality))
+    buffer.seek(0)
+    return np.asarray(Image.open(buffer).convert("RGB"))
 
 
 def patch_grid_side(size: int) -> int:

@@ -131,12 +131,16 @@ the reject signal on REJECT, and checks the alert rules. The frame drawn into th
 video shows the station box (grey empty, yellow collecting, green/orange/red decided), the
 part box, the last verdict and score, the counters and the heatmap inset.
 
-**Why two thresholds.** REJECT at `t_high` keeps the prototype's calibrated rule, so the
-evaluation numbers still describe the line. The REVIEW band below it (`t_low`, the 95th
-percentile of scores of good images the model never trained on) sends borderline parts to
-a person: on a real line scrapping a good part or shipping a bad one both cost more than a
-look. Severity is the excess over `t_high` as a percentage, so the same bands work for the
-autoencoder's 0.004 scale and FoundAD's 11.5 scale.
+**Why two thresholds.** `t_low` is the prototype's calibrated threshold (best F1 on split A),
+so the evaluation numbers still describe the line: a part at or above it does not pass. The
+band above it, up to `t_high`, sends borderline parts to a person: on a real line scrapping a
+good part or shipping a bad one both cost more than a look. `t_high` is placed above every
+good image the model was calibrated on (halfway between the highest of them, 3.22, and the
+lowest split-A defect above it, 5.34): with it, 3 of the 31 calibration good images would be
+reviewed and none rejected. The first rule tried (REVIEW from the 95th percentile of good
+scores, capped at the best-F1 cut) gave an empty band, because the best-F1 cut lies inside
+the tail of the good scores. Severity is the excess over `t_high` as a percentage, so the
+same bands work for the autoencoder's 0.004 scale and FoundAD's 4.3 scale.
 
 **Why the QC log is SQLite.** One file, no server, in the standard library, safe for two
 processes (the runner writes, the dashboard reads and writes settings). It also holds the
@@ -149,10 +153,21 @@ with 4 or more rejects in 20 raises the alert. The monitor raises each incident 
 again only after the condition has cleared. A stall is `stall_seconds` without a part.
 
 **The demo feed** (`src/make_line_video.py`) exists because the proof of concept must be
-reproducible on any machine: the 20 held-out photos move across a rendered belt under a
+reproducible on any machine: the 21 held-out photos move across a rendered belt under a
 fixed camera. Only the motion is simulated; the bottles are the dataset's images. The
 manifest it writes is used by the end-to-end test to check one decision per part and that
 good parts pass while defective ones do not.
+
+**What the first end-to-end run taught us.** The first FoundAD model rejected all 21 parts
+of the demo feed, although it was perfect on the PNGs of the same bottles. Experiments
+isolated the cause: the video codec. A JPEG round trip at quality 75 alone lifted a good
+bottle's score from 1.7 to 4.1, a lossless clip reproduced the PNG score exactly, and resize
+and rotation changed nothing. The hot patches sat in the white belt around the bottle, where
+the codec's faint blocks are "texture" the model had never seen. Two changes, both kept and
+both the kind a real camera needs too: the score now only counts patches on the part
+(`patch_foreground`: the belt is not inspected), and training pairs go through a JPEG round
+trip half the time, so compressed-but-normal is normal. The lesson for the report: the
+calibration data must come through the same acquisition path as production.
 
 **Testing.** Every subsystem has hand-worked unit tests (`tests/test_decision.py`,
 `test_qclog.py`, `test_alerts.py`, `test_acquisition.py`, `test_foundad.py`,

@@ -311,7 +311,9 @@ def write_summary(path: Path, split: dict, results: dict, configs: dict) -> None
         row("Defect images used in training", lambda k, m: cells[k]["defect"]),
         row("Labelled images used to set the threshold", lambda k, m: cells[k]["labelled"]),
         row("Image AUROC [95% CI]", lambda k, m: fmt_ci(m, "auroc")),
-        row("Threshold (REJECT if score ≥)", lambda k, m: f"{m['threshold']:.5f} ({cells[k]['threshold']})"),
+        row("Threshold (does not pass if score ≥)", lambda k, m: f"{m['threshold']:.5f} ({cells[k]['threshold']})"),
+        row("REJECT line on the line (t_high)", lambda k, m: (f"{configs[k]['t_high']:.5f} (scores between the two "
+            "lines go to REVIEW)" if "t_high" in configs[k] else "= threshold (no REVIEW band until the operator sets one)")),
         row("Precision [95% CI]", lambda k, m: fmt_ci(m, "precision")),
         row("Recall (defects caught) [95% CI]", lambda k, m: fmt_ci(m, "recall")),
         row("F1 [95% CI]", lambda k, m: fmt_ci(m, "f1")),
@@ -356,7 +358,9 @@ def write_summary(path: Path, split: dict, results: dict, configs: dict) -> None
         "",
         "95% CI: exact binomial (Clopper–Pearson) interval for precision, recall and specificity; "
         f"bootstrap percentile interval ({N_BOOT} resamples of split B) for AUROC and F1. "
-        f"With only {n_b_good} good images, one false alarm moves specificity by {100 / n_b_good:.0f} percentage points.",
+        f"With only {n_b_good} good images, one false alarm moves specificity by {100 / n_b_good:.0f} percentage points. "
+        "Precision, recall, F1 and the confusion matrix count every image at or above the threshold as rejected; "
+        "on the line, a FoundAD score between the threshold and t_high goes to REVIEW (a person decides) instead.",
         "",
         "## Takeaways",
         "",
