@@ -12,7 +12,7 @@ patch, the prediction is pulled towards normal, so the gap is large.
     score(image)  = mean of the K largest patch errors   (one bad spot is enough)
     heatmap       = the 32 x 32 grid of patch errors
 
-What is trained: the predictor only (~5 M parameters). What is needed: a few good
+What is trained: the predictor only (~11 M parameters). What is needed: a few good
 images (default 4), no defect images, no labels. The threshold is still chosen on
 split A, like the autoencoder's, so the comparison stays fair.
 
@@ -37,6 +37,10 @@ from src.dino import PATCH, Block
 FOUNDAD_SIZE = 448      # 448 / 14 = 32 x 32 patch grid (FoundAD uses 512 / 16 = the same grid)
 TOP_K = 10              # image score = mean of the 10 highest patch errors (FoundAD's K for MVTec)
 N_FROM_END = 3          # encoder block the features are taken from (3rd from the end, as FoundAD)
+# Which patches belong to the part (part_mask). Stored in the checkpoint as "foreground";
+# checkpoints without the key use Otsu. Added 2026-11-04 per Dhruv (egg-line demo).
+FOREGROUND_RULES = ("otsu", "disc")
+DISC_RADIUS = 0.27      # "disc" rule: radius of the centred part, as a fraction of the image side
 
 
 # ----------------------------------------------------------------------------
@@ -124,18 +128,26 @@ def score_from_errors(errors: torch.Tensor, top_k: int,
     return float(score), grid.cpu().numpy()
 
 
-def patch_foreground(image: np.ndarray, side: int) -> np.ndarray:
+def patch_foreground(image: np.ndarray, side: int, rule: str = "otsu") -> np.ndarray:
     """side x side patch mask of the part: a patch counts as part if more than half of its
-    pixels are foreground (foreground_mask: Otsu, border = background)."""
-    mask = foreground_mask(image)
+    pixels are foreground (part_mask under the given rule)."""
+    mask = part_mask(image, rule)
     patch = mask.shape[0] // side
     return mask[:side * patch, :side * patch].reshape(side, patch, side, patch).mean(axis=(1, 3)) > 0.5
 
 
-def foundad_inspect(model: FoundAD, image: Image.Image, size: int, device) -> tuple[float, np.ndarray]:
-    """Score one PIL image. Returns (score, 32x32 patch-error map); only the part's patches score."""
+def foreground_rule(config: dict) -> str:
+    """The checkpoint's foreground rule. Checkpoints made before the rule was stored
+    (the bottle model) used Otsu, so that is the default: their scores do not change."""
+    return config.get("foreground", "otsu")
+
+
+def foundad_inspect(model: FoundAD, image: Image.Image, size: int, device,
+                    foreground: str = "otsu") -> tuple[float, np.ndarray]:
+    """Score one PIL image. Returns (score, 32x32 patch-error map); only the part's patches
+    score, the part being found by the checkpoint's foreground rule (foreground_rule)."""
     resized = image.convert("RGB").resize((size, size), Image.BILINEAR)
-    foreground = patch_foreground(np.asarray(resized), patch_grid_side(size))
+    foreground = patch_foreground(np.asarray(resized), patch_grid_side(size), foreground)
     x = foundad_transform(size)(image).unsqueeze(0).to(device)
     with torch.no_grad():
         errors = model.patch_errors(x)
@@ -151,6 +163,30 @@ def upsample_map(error_map: np.ndarray, size: int) -> np.ndarray:
 # ----------------------------------------------------------------------------
 # Training-time augmentation: CutPaste synthetic defects
 # ----------------------------------------------------------------------------
+def part_mask(image: np.ndarray, rule: str = "otsu") -> np.ndarray:
+    """Boolean pixel mask of the part under a foreground rule (FOREGROUND_RULES).
+
+    "otsu": the grey-level class that is not on the border (foreground_mask). Right for a
+    part on a plain belt, as in the dataset photos and the bottle line.
+    "disc": a centred disc of radius DISC_RADIUS x the side. Right for crops that a part
+    finder has already centred on the part over a busy background: on the egg line's rod
+    conveyor a grey-level split cuts through the dark rods and the bright floor, not round
+    the egg. Added 2026-11-04 per Dhruv (egg-line demo).
+    """
+    if rule == "otsu":
+        return foreground_mask(image)
+    if rule == "disc":
+        return disc_mask(*image.shape[:2])
+    raise ValueError(f"unknown foreground rule {rule!r}; expected one of {FOREGROUND_RULES}")
+
+
+def disc_mask(height: int, width: int, radius: float = DISC_RADIUS) -> np.ndarray:
+    """Pixels within radius x min(height, width) of the image centre."""
+    yy, xx = np.mgrid[:height, :width]
+    r = radius * min(height, width)
+    return (xx - (width - 1) / 2) ** 2 + (yy - (height - 1) / 2) ** 2 <= r * r
+
+
 def foreground_mask(image: np.ndarray) -> np.ndarray:
     """Boolean mask of the part. Otsu's threshold splits the grey levels in two; the
     class that dominates the image border is taken to be the background. This is
@@ -182,8 +218,9 @@ class CutPaste:
     those of the clean image, which is what teaches the predictor to undo defects.
     """
 
-    def __init__(self, rng: random.Random):
+    def __init__(self, rng: random.Random, foreground: str = "otsu"):
         self.rng = rng
+        self.foreground = foreground  # where the part is (part_mask); pastes land on it
         self.jitter = T.ColorJitter(0.5, 0.5, 0.5, 0.5)
 
     def __call__(self, image: np.ndarray) -> np.ndarray:
@@ -199,7 +236,7 @@ class CutPaste:
         """Paste the piece at a random position whose top-left corner lies on the part."""
         ih, iw = image.shape[:2]
         ph, pw = piece.shape[:2]
-        ys, xs = np.nonzero(foreground_mask(image)[: ih - ph + 1, : iw - pw + 1])
+        ys, xs = np.nonzero(part_mask(image, self.foreground)[: ih - ph + 1, : iw - pw + 1])
         if len(ys) == 0:
             return image
         i = self.rng.randrange(len(ys))

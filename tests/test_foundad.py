@@ -1,6 +1,7 @@
 """Technique 3 tests: the minimal DINOv2 encoder (shapes, strict weight loading), the
 predictor, the top-K score, CutPaste synthesis, the Otsu foreground rule and the REJECT-line rule.
 The strict-loading test needs weights/dinov2_vits14_pretrain.pth and is skipped without it."""
+import math
 import random
 import unittest
 from pathlib import Path
@@ -11,8 +12,9 @@ from PIL import Image
 
 from src.dino import PATCH, VARIANTS, DinoVisionTransformer, load_dino
 from src.download_backbone import BACKBONES, backbone_path
-from src.foundad import (CutPaste, FoundAD, Predictor, foreground_mask, foundad_transform, otsu_threshold,
-                         patch_foreground, score_from_errors, upsample_map)
+from src.foundad import (DISC_RADIUS, CutPaste, FoundAD, Predictor, foreground_mask, foreground_rule,
+                         foundad_transform, otsu_threshold, part_mask, patch_foreground, score_from_errors,
+                         upsample_map)
 from src.train_foundad import reject_line
 
 REPO = Path(__file__).resolve().parents[1]
@@ -147,6 +149,42 @@ class TestSynthesis(unittest.TestCase):
         cp = CutPaste(random.Random(1))
         self.assertTrue(np.any(cp.blob(image) != image))
         self.assertTrue(np.any(cp.scar(image) != image))
+
+
+class TestForegroundRules(unittest.TestCase):
+    """Which patches are the part: Otsu (bottle) or a centred disc (egg crops). Added
+    2026-11-04 per Dhruv with the egg line."""
+
+    def test_checkpoints_without_a_rule_keep_otsu(self):
+        self.assertEqual(foreground_rule({}), "otsu")          # the bottle model: scores unchanged
+        self.assertEqual(foreground_rule({"foreground": "disc"}), "disc")
+
+    def test_default_rule_is_still_otsu(self):
+        image = bottle_like()
+        np.testing.assert_array_equal(part_mask(image), foreground_mask(image))
+        np.testing.assert_array_equal(patch_foreground(image, 8), patch_foreground(image, 8, "otsu"))
+
+    def test_disc_rule_is_the_centred_disc_whatever_the_image(self):
+        busy = np.random.default_rng(0).integers(0, 256, (448, 448, 3), dtype=np.uint8)  # rods, floor, noise
+        mask = part_mask(busy, "disc")
+        self.assertTrue(mask[224, 224] and not mask[0, 0] and not mask[224, 50])
+        self.assertAlmostEqual(mask.mean(), math.pi * DISC_RADIUS ** 2, delta=0.005)
+        grid = patch_foreground(busy, 32, "disc")
+        self.assertAlmostEqual(grid.sum(), math.pi * (DISC_RADIUS * 32) ** 2, delta=12)
+
+    def test_unknown_rule_is_refused(self):
+        with self.assertRaises(ValueError):
+            part_mask(bottle_like(), "everything")
+
+    def test_cutpaste_on_disc_rule_pastes_on_the_disc(self):
+        torch.manual_seed(0)
+        busy = np.full((128, 128, 3), 128, np.uint8)
+        for seed in range(5):
+            pasted = CutPaste(random.Random(seed), "disc").blob(busy.copy())
+            changed = np.any(pasted != busy, axis=2)
+            if changed.any():
+                ys, xs = np.nonzero(changed)
+                self.assertTrue(part_mask(busy, "disc")[ys.min(), xs.min()])
 
 
 class TestCalibrationRules(unittest.TestCase):

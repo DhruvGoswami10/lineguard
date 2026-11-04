@@ -16,7 +16,7 @@ from sklearn.metrics import precision_recall_curve
 
 from src.data import ae_transform, cnn_transform
 from src.dino import load_dino
-from src.foundad import FoundAD, Predictor, foundad_inspect
+from src.foundad import FoundAD, Predictor, foreground_rule, foundad_inspect
 from src.gradcam import GradCAM
 from src.models import ConvAutoencoder, build_resnet18
 
@@ -59,7 +59,8 @@ def inspect(model, ckpt: dict, image, device, with_heatmap: bool = True) -> dict
     if ckpt["kind"] == "ae":
         score, heatmap = ae_inspect(model, image, ckpt["config"]["sigma"], device)
     elif ckpt["kind"] == "foundad":
-        score, heatmap = foundad_inspect(model, image, ckpt["config"]["input_size"], device)
+        score, heatmap = foundad_inspect(model, image, ckpt["config"]["input_size"], device,
+                                         foreground_rule(ckpt["config"]))  # changed 2026-11-04 per Dhruv
     else:
         score, heatmap = cnn_inspect(model, image, device, with_heatmap)
     threshold = ckpt["threshold"]

@@ -45,8 +45,9 @@ from PIL import Image
 from src.common import SEED, get_device, set_seed
 from src.data import DEFAULT_ROOT, DEFAULT_SPLIT, check_layout, load_image, load_split
 from src.download_backbone import BACKBONES, backbone_path
-from src.foundad import (COMPRESS_P, COMPRESS_QUALITY, FOUNDAD_SIZE, N_FROM_END, TOP_K, CutPaste, FoundAD,
-                         Predictor, foundad_inspect, foundad_transform, jpeg_round_trip, train_augment)
+from src.foundad import (COMPRESS_P, COMPRESS_QUALITY, FOREGROUND_RULES, FOUNDAD_SIZE, N_FROM_END, TOP_K,
+                         CutPaste, FoundAD, Predictor, foreground_rule, foundad_inspect, foundad_transform,
+                         jpeg_round_trip, train_augment)
 from src.inference import best_f1_threshold, save_checkpoint
 from src.dino import load_dino
 from src.visualize import plot_curves
@@ -74,6 +75,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--predictor-heads", type=int, default=12)
     p.add_argument("--n-from-end", type=int, default=N_FROM_END, help="encoder block to read features from")
     p.add_argument("--top-k", type=int, default=TOP_K, help="patch errors averaged into the image score")
+    p.add_argument("--foreground", default="otsu", choices=FOREGROUND_RULES,  # added 2026-11-04 per Dhruv
+                   help="which patches are the part: otsu (part on a plain belt) or disc (crops centred "
+                        "on the part by a part finder, e.g. the egg line); stored in the checkpoint")
     p.add_argument("--seed", type=int, default=SEED)
     p.add_argument("--device", default="auto", help="auto, cpu or cuda")
     p.add_argument("--log-every", type=int, default=50)
@@ -116,7 +120,7 @@ def train(model: FoundAD, images: list[Image.Image], device, args) -> dict:
     its result is not bit-identical to an uninterrupted run.
     """
     rng = random.Random(args.seed)
-    augment, cutpaste, transform = train_augment(), CutPaste(rng), foundad_transform(args.size)
+    augment, cutpaste, transform = train_augment(), CutPaste(rng, args.foreground), foundad_transform(args.size)
     dropout = nn.Dropout(0.2)  # on the context features, as FoundAD: a little noise regularises
     optimizer = torch.optim.AdamW(model.predictor.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     history, window, start, first_step = [], [], time.perf_counter(), 1
@@ -127,7 +131,7 @@ def train(model: FoundAD, images: list[Image.Image], device, args) -> dict:
         optimizer.load_state_dict(progress["optimizer"])
         history, first_step = list(progress["history"]), int(progress["step"]) + 1
         rng = random.Random(args.seed + first_step)
-        cutpaste = CutPaste(rng)
+        cutpaste = CutPaste(rng, args.foreground)
         torch.manual_seed(args.seed + first_step)
         print(f"Resumed from {progress_path} at step {first_step - 1}.")
     model.predictor.train()
@@ -158,9 +162,10 @@ def train(model: FoundAD, images: list[Image.Image], device, args) -> dict:
     return {"loss": history}
 
 
-def scores_for(model, root, items, size, device) -> tuple[np.ndarray, list[np.ndarray]]:
-    """(image scores, patch-error maps) for a list of split items."""
-    results = [foundad_inspect(model, load_image(Path(root) / i["path"]), size, device) for i in items]
+def scores_for(model, root, items, size, device, foreground: str = "otsu") -> tuple[np.ndarray, list[np.ndarray]]:
+    """(image scores, patch-error maps) for a list of split items, under the foreground rule
+    the checkpoint will store (so the thresholds come from the scores the line computes)."""
+    results = [foundad_inspect(model, load_image(Path(root) / i["path"]), size, device, foreground) for i in items]
     return np.array([s for s, _ in results]), [m for _, m in results]
 
 
@@ -180,14 +185,14 @@ def calibrate_on_split(model, args, split) -> dict:
     """Dataset mode: PASS line (the checkpoint's threshold) by best F1 on split A; REJECT
     line above every good image the model never trained on (validation + split-A good)."""
     cpu = torch.device("cpu")
-    a_scores, _ = scores_for(model, args.data_root, split["split_a"], args.size, cpu)
+    a_scores, _ = scores_for(model, args.data_root, split["split_a"], args.size, cpu, args.foreground)
     a_labels = np.array([i["label"] for i in split["split_a"]])
     threshold = best_f1_threshold(a_scores, a_labels)
     flagged = a_scores >= threshold
     tp, fp, fn = int((flagged & (a_labels == 1)).sum()), int((flagged & (a_labels == 0)).sum()), \
         int((~flagged & (a_labels == 1)).sum())
     unseen_good = split["val"] + [i for i in split["split_a"] if i["label"] == 0]
-    good_scores, good_maps = scores_for(model, args.data_root, unseen_good, args.size, cpu)
+    good_scores, good_maps = scores_for(model, args.data_root, unseen_good, args.size, cpu, args.foreground)
     t_high = reject_line(good_scores, a_scores[a_labels == 1], threshold)
     in_band = int(((good_scores >= threshold) & (good_scores < t_high)).sum())
     print(f"PASS below {threshold:.5f} (best F1 on split A: {2 * tp / (2 * tp + fp + fn):.3f}); "
@@ -208,7 +213,8 @@ def calibrate_on_good_only(model, args, held_out: list[Path], trained: list[Path
     photos not trained on; falls back to the training photos (optimistic) if none are left."""
     cpu = torch.device("cpu")
     items = [{"path": p.name} for p in (held_out or trained)]
-    scores, maps = scores_for(model, held_out[0].parent if held_out else trained[0].parent, items, args.size, cpu)
+    scores, maps = scores_for(model, held_out[0].parent if held_out else trained[0].parent, items, args.size, cpu,
+                              args.foreground)
     mean, std = float(scores.mean()), float(scores.std()) if len(scores) > 1 else float(scores.mean()) * 0.05
     threshold, t_high = mean + 2 * std, mean + 3 * std
     source = f"{len(scores)} held-out good photos" if held_out else f"the {len(scores)} training photos (no held-out ones: optimistic)"
@@ -238,6 +244,7 @@ def main() -> None:
             old["backbone"], old["input_size"], old["n_from_end"], old["top_k"]
         args.predictor_width, args.predictor_depth, args.predictor_heads = \
             old["predictor_width"], old["predictor_depth"], old["predictor_heads"]
+        args.foreground = foreground_rule(old)  # recalibrate with the rule it was trained under
     if args.size % 14:
         raise SystemExit("--size must be a multiple of 14 (the DINOv2 patch size).")
     if args.good_dir:
@@ -293,6 +300,7 @@ def main() -> None:
         "technique": "FoundAD-style few-shot detector (frozen DINOv2 + trained predictor)",
         "backbone": args.backbone, "backbone_file": BACKBONES[args.backbone]["file"],
         "input_size": args.size, "n_from_end": args.n_from_end, "top_k": args.top_k,
+        "foreground": args.foreground,  # which patches score (src/foundad.py, part_mask); added 2026-11-04 per Dhruv
         "predictor_width": args.predictor_width, "predictor_depth": args.predictor_depth,
         "predictor_heads": args.predictor_heads, "predictor_params": n_params,
         "loss": "MSE between predicted and clean patch features", "optimizer": "AdamW",
