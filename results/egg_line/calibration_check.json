@@ -1,0 +1,151 @@
+{
+  "t_low": 0.9907449479213665,
+  "t_high": 1.1009204933111394,
+  "threshold_rule": "mean + 2 sigma of good scores (205 held-out good photos); the PASS line",
+  "held_out_normal": {
+    "n": 205,
+    "mean": 0.7703938571418204,
+    "std": 0.11017554538977302,
+    "p99_5": 1.110418667793274,
+    "max": 1.1356585025787354,
+    "at_or_above_t_low": 9,
+    "at_or_above_t_high": 3
+  },
+  "excluded_by_eye": {
+    "n": 21,
+    "mean": 2.994556180068425,
+    "std": 3.4716748172811407,
+    "p99_5": 11.296160221099852,
+    "max": 11.368288040161133,
+    "at_or_above_t_low": 13,
+    "at_or_above_t_high": 8,
+    "crops": [
+      {
+        "file": "f00072_e0051.png",
+        "reason": "white flecks on the shell",
+        "score": 10.0969,
+        "verdict": "REJECT"
+      },
+      {
+        "file": "f00541_e0362.png",
+        "reason": "dark speck on the shell",
+        "score": 0.9438,
+        "verdict": "PASS"
+      },
+      {
+        "file": "f00560_e0378.png",
+        "reason": "pale (cream) shell",
+        "score": 1.0515,
+        "verdict": "REVIEW"
+      },
+      {
+        "file": "f00562_e0379.png",
+        "reason": "white egg among brown ones",
+        "score": 0.8488,
+        "verdict": "PASS"
+      },
+      {
+        "file": "f00711_e0470.png",
+        "reason": "pale (pinkish-white) shell",
+        "score": 1.0971,
+        "verdict": "REVIEW"
+      },
+      {
+        "file": "f00746_e0488.png",
+        "reason": "light flecks / debris on the shell",
+        "score": 2.7028,
+        "verdict": "REJECT"
+      },
+      {
+        "file": "f00764_e0498.png",
+        "reason": "pale patch on the shell",
+        "score": 6.3048,
+        "verdict": "REJECT"
+      },
+      {
+        "file": "f00875_e0577.png",
+        "reason": "pale patch on the shell",
+        "score": 1.0352,
+        "verdict": "REVIEW"
+      },
+      {
+        "file": "f01030_e0707.png",
+        "reason": "pale shell with a dark mark",
+        "score": 1.9272,
+        "verdict": "REJECT"
+      },
+      {
+        "file": "f01098_e0744.png",
+        "reason": "dark dirt stain",
+        "score": 11.3683,
+        "verdict": "REJECT"
+      },
+      {
+        "file": "f01230_e0855.png",
+        "reason": "pale (pinkish-white) shell",
+        "score": 0.6755,
+        "verdict": "PASS"
+      },
+      {
+        "file": "f01306_e0917.png",
+        "reason": "white egg among brown ones",
+        "score": 2.7516,
+        "verdict": "REJECT"
+      },
+      {
+        "file": "f01396_e0995.png",
+        "reason": "pale (grey-white) shell",
+        "score": 1.0859,
+        "verdict": "REVIEW"
+      },
+      {
+        "file": "f01402_e1000.png",
+        "reason": "pale (cream) shell",
+        "score": 0.9944,
+        "verdict": "REVIEW"
+      },
+      {
+        "file": "f01501_e1054.png",
+        "reason": "white specks on the shell",
+        "score": 5.2462,
+        "verdict": "REJECT"
+      },
+      {
+        "file": "f01518_e1068.png",
+        "reason": "green fleck on the shell",
+        "score": 0.7065,
+        "verdict": "PASS"
+      },
+      {
+        "file": "f01811_e1320.png",
+        "reason": "pale patch on the shell",
+        "score": 0.8516,
+        "verdict": "PASS"
+      },
+      {
+        "file": "f01826_e1325.png",
+        "reason": "white mark on the shell",
+        "score": 0.8454,
+        "verdict": "PASS"
+      },
+      {
+        "file": "f01836_e1332.png",
+        "reason": "pale (cream) shell",
+        "score": 0.8614,
+        "verdict": "PASS"
+      },
+      {
+        "file": "f01864_e1349.png",
+        "reason": "purple mark across the shell",
+        "score": 10.647,
+        "verdict": "REJECT"
+      },
+      {
+        "file": "f01902_e1365.png",
+        "reason": "white marks on the shell",
+        "score": 0.8437,
+        "verdict": "PASS"
+      }
+    ]
+  }
+}

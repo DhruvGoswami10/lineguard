@@ -1,0 +1,9 @@
+   10.0 s of footage, 29 eggs decided (30 s)
+   20.0 s of footage, 74 eggs decided (67 s)
+   30.0 s of footage, 94 eggs decided (94 s)
+   40.0 s of footage, 123 eggs decided (123 s)
+   50.0 s of footage, 159 eggs decided (157 s)
+   60.0 s of footage, 186 eggs decided (186 s)
+   70.0 s of footage, 221 eggs decided (219 s)
+Inspected 234 eggs: PASS 210, REVIEW 13, REJECT 11. Video: results/egg_line/media/egg_line_demo.mp4  Log: results/egg_line/inspections.csv
+234 crops on 3 sheets in results/egg_line/media/review
