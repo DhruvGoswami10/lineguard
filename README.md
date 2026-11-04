@@ -7,7 +7,8 @@ dashboard with KPIs, a control chart, alerts and a review queue.
 
 Assignment 1 delivered the AI subsystem (two techniques compared). The final system adds a
 third, stronger technique and every non-AI subsystem around it. Everything runs on a laptop
-CPU; the demo needs no dataset and no training.
+CPU; the demo needs no dataset and no training. A second product, eggs on a real farm conveyor
+filmed by a fixed camera, shows the same detector on real footage (section 8).
 
 ![architecture](docs/architecture.png)
 
@@ -198,7 +199,8 @@ The 21 images in `samples/` (and therefore the demo feed) are split-B images: no
    `t_high` is the mildest split-A defect score above every good image the model was calibrated on,
    so a REJECT is at least as anomalous as a defect seen in calibration and a good part is never
    rejected outright by the calibration rule; the autoencoder and CNN have no `t_high` of their own
-   (empty band until the operator sets one). FoundAD scores only the patches on the part (Otsu foreground): the belt around
+   (empty band until the operator sets one). FoundAD scores only the patches on the part (Otsu foreground; for crops a
+   part finder has centred, such as the egg line's, a centred disc): the belt around
    it is not inspected, so codec noise or lighting on the belt cannot reject a part. REJECT severity is the score's excess over `t_high`: minor < 50 %,
    moderate < 150 %, severe beyond (operator-adjustable, scale-free so it works for any model).
 4. **Record and act.** Every decision goes into the QC log with its score, both thresholds, the model
@@ -234,9 +236,11 @@ src/run_line.py          the line runner (end to end) + annotated feed
 src/dashboard.py         Streamlit operator dashboard
 src/make_line_video.py   renders the demo camera feed from real sample images
 src/visualize.py         training curves, image | heatmap | verdict figures, overlays
+src/egg_line.py          egg line: egg finder, inspection band, crop, tracker (section 8)
+src/egg_demo.py          egg line: training crops, review sheets, inspection run + annotated video
 tests/                   unittest suite (standard library): one file per subsystem + end to end
-splits/                  the committed split
-weights/                 ae.pt, cnn.pt, foundad.pt (model + thresholds); DINOv2 file after download
+splits/                  the committed split; egg_line_excluded.csv (egg crops judged abnormal by eye)
+weights/                 ae.pt, cnn.pt, foundad.pt, foundad_egg.pt (model + thresholds); DINOv2 file after download
 samples/                 20 split-B images, line_demo.mp4 + manifest, ATTRIBUTION.md
 results/                 metrics, plots, heatmaps, demo figures, logs, SUMMARY.md; line/ after a run
 docs/                    report inputs, code walkthrough, architecture diagram
@@ -256,6 +260,7 @@ docs/                    report inputs, code walkthrough, architecture diagram
 | Dashboard shows "No QC log yet" | Start the line runner first, or pass `-- --db path/to/qc_log.sqlite`. |
 | `Dataset folder not found` | Only training/evaluation need the dataset: `python -m src.download_data`. |
 | Training was interrupted | `python -m src.train_foundad --resume` continues from the last progress checkpoint. |
+| `Cannot open data/egg_line/1EgUxp6BlBY.mp4` | The egg clip is not in the repository: download it first (section 8). |
 
 ## 7. Dataset, licences and references
 
@@ -295,3 +300,64 @@ definition, the FoundAD-style predictor and synthesis, training loops, threshold
 evaluation, the demo and every line subsystem. It uses PyTorch layers and optimisers, torchvision's
 ResNet-18 and ImageNet weights, Meta's DINOv2 weights, scikit-learn metrics, SciPy's Gaussian filter,
 OpenCV's video I/O and connected components, and Streamlit's widgets.
+
+## 8. Second product: an egg line on real conveyor footage
+
+<!-- added 2026-11-04 per Dhruv -->
+The bottle line's camera feed is simulated motion over real photographs. To show the detector on a
+real line, the same system inspects eggs in a public recording: a fixed overhead IP camera over a
+rod conveyor on a poultry farm, 3 minutes at 1080p and 20 frames per second ("Egg Counting with IP
+Camera on Conveyor Belt", CamContador, YouTube
+[1EgUxp6BlBY](https://www.youtube.com/watch?v=1EgUxp6BlBY)). Nobody labelled the clip's eggs; the
+anomalies it contains are what a farm line really carries: dirt stains, marks, holes and specks on
+the shell, and white or pale eggs among brown ones. **What it catches and what it does not:** marks
+and stains score far above the REJECT line; shell colour is only weakly seen (some pale eggs reach
+REVIEW, the white egg in the demo stretch passes). That is the DINOv2 features, not the training:
+they are trained to be robust to colour changes, and training without colour augmentation did not
+change it. A real egg grader checks shell colour with a separate colour measurement; this system
+does not have one. Numbers: [`results/egg_line/SUMMARY.md`](results/egg_line/SUMMARY.md).
+
+**What is new, and what is reused.** The FoundAD detector, its training script, the decision engine
+(PASS / REVIEW / REJECT, severity), the median vote and the QC log are the bottle line's. New is only
+the part finder (`src/egg_line.py`): eggs are found by colour (red minus blue, with a low and a high
+threshold so a pale egg comes out whole), touching eggs are split, each egg is followed from frame
+to frame and decided on the median of its first 5 clean frames. The camera vendor's counting
+software draws a line, boxes and numbers on the lower part of the picture, so only the band above
+it is inspected; that band is also all the annotated video shows. Each egg is cropped as a square
+of 1.3 times its expected size (the lens is a fisheye, so eggs look bigger in the middle), and
+FoundAD scores the centred disc of the crop, not the moving rods around it (foreground rule
+`disc`, stored in the checkpoint).
+
+**Data use.** The first 105 s give the training data: one crop per egg (326 eggs). They were looked
+at on contact sheets (`python -m src.egg_demo sheets`) and 21 that look abnormal were set aside (`splits/egg_line_excluded.csv`, with
+the reason for each). The predictor trained on 100 of the remaining 305; the other 205 set the
+thresholds without labels (REVIEW from mean + 2 sigma of their scores, REJECT from mean + 3 sigma).
+The demo inspects only the rest of the clip (105 s to the end), which nothing was trained or
+calibrated on.
+
+```
+# 0. download the clip (not in the repository; any downloader works, e.g. yt-dlp, which is not a project dependency;
+#    yt-dlp 2026 also needs a JavaScript runtime, node or deno, to download from YouTube)
+yt-dlp -f 137 -o data/egg_line/1EgUxp6BlBY.mp4 https://www.youtube.com/watch?v=1EgUxp6BlBY
+python -m src.egg_demo run                                # inspect 105 s to the end with weights/foundad_egg.pt
+python -m src.egg_demo review                             # every decided egg on contact sheets, highest score first
+streamlit run src/dashboard.py -- --db results/egg_line/qc_log.sqlite      # the egg line's QC log
+```
+
+The run takes about 4 minutes on an Apple M5 Pro CPU (3x slower than the footage plays). It writes
+`results/egg_line/inspections.csv` (one row per egg: frame, position, frame scores, median, verdict,
+severity), `summary.json` and the QC log; the annotated video, the heatmap of every
+egg sent to REVIEW or REJECT and the contact sheets go to `results/egg_line/media/`, which is
+git-ignored because it shows frames of someone else's video. Retraining from scratch:
+
+```
+python -m src.egg_demo crops --start 0 --end 105          # one crop per egg; the excluded ones go to data/egg_line/excluded/
+python -m src.egg_demo sheets                             # contact sheets for the review by eye
+python -m src.train_foundad --good-dir data/egg_line/good --shots 100 --steps 2000 \
+    --foreground disc --out weights/foundad_egg.pt --results results/egg_line   # ~35 min on an Apple M-series CPU
+python -m src.egg_demo check                              # held-out and excluded crops against the thresholds
+```
+
+**Licence of the footage.** The clip is under YouTube's standard licence, not a reuse licence. It is
+used here for a university assessment only, credited on screen, and never committed: the repository
+holds the code, the trained predictor, the list of excluded crop names and the numbers.
